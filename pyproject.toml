@@ -1,0 +1,20 @@
+[project]
+name = "instruct-4dgs"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "accelerate>=1.13.0",
+    "configargparse>=1.7.5",
+    "diffusers>=0.37.1",
+    "einops>=0.8.2",
+    "huggingface-hub>=1.13.0",
+    "moviepy>=2.2.1",
+    "opencv-python>=4.13.0.92",
+    "pytorch-lightning>=2.6.1",
+    "torch<2.11",
+    "torchvision>=0.25.0",
+    "transformers[torch]>=5.7.0",
+    "xformers>=0.0.35",
+]

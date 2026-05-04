@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # ===================================================================
 # ./run_instruct_4dgs.sh [dataset] [scene_name] [prompt] [guidance_scale] [image_guidance_scale]

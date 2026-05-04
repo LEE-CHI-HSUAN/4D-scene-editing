@@ -57,7 +57,7 @@ For the convenience, we provide some [pre-processed files and training outputs](
 You can easily run the editing pipeline using the shell script below.
 ```bash
 # run_instruct_4dgs.sh [dataset] [scene_name] [prompt] [guidance_scale] [image_guidance_scale]
-bash run_instruct_4dgs.sh dynerf coffee_martini "Make it look like a fauvism painting" 10.5 1.2
+bash run_instruct_4dgs.sh dynerf cook_spinach "Make it look like a fauvism painting" 10.5 1.2
 ```
 
 * Some scenes within the **Dynerf dataset** are known to have missing camera views. If you are working with one of these scenes, you will need to adapt the editing script to handle the incomplete data. To resolve this, please refer to the logic around **line 247** in the `edit_3d.py` script. 

@@ -35,10 +35,10 @@ from .ip2p_blocks import (
     get_up_block,
 )
 from .ip2p_resnet import InflatedConv3d
+from huggingface_hub.constants import HF_HUB_CACHE as DIFFUSERS_CACHE
+from huggingface_hub.constants import HF_HUB_OFFLINE
+from diffusers.utils.constants import SAFETENSORS_WEIGHTS_NAME
 from diffusers.utils import (
-    DIFFUSERS_CACHE,
-    HF_HUB_OFFLINE,
-    SAFETENSORS_WEIGHTS_NAME,
     _add_variant,
     _get_model_file,
     logging,
@@ -507,7 +507,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
         cache_dir = kwargs.pop("cache_dir", DIFFUSERS_CACHE)
         force_download = kwargs.pop("force_download", False)
         local_files_only = kwargs.pop("local_files_only", HF_HUB_OFFLINE)
-        use_auth_token = kwargs.pop("use_auth_token", None)
+        token = kwargs.pop("token", None)
         revision = kwargs.pop("revision", None)
         subfolder = kwargs.pop("subfolder", None)
         variant = kwargs.pop("variant", None)
@@ -517,10 +517,8 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
             subfolder=subfolder,
             return_unused_kwargs=False,
             return_commit_hash=False,
-            resume_download=force_download,
-            proxies=force_download,
             local_files_only=local_files_only,
-            use_auth_token=use_auth_token,
+            token=token,
         )
             
         config["_class_name"] = cls.__name__
@@ -550,10 +548,8 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
             weights_name=_add_variant(SAFETENSORS_WEIGHTS_NAME, variant),
             cache_dir=cache_dir,
             force_download=force_download,
-            resume_download=force_download,
-            proxies=force_download,
             local_files_only=local_files_only,
-            use_auth_token=use_auth_token,
+            token=token,
             revision=revision,
             subfolder=subfolder,
             user_agent=user_agent,
@@ -561,7 +557,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
         
         model = cls.from_config(config)
         
-        state_dict = load_state_dict(model_file, variant=variant)
+        state_dict = load_state_dict(model_file)
         
         # state_dict = torch.load(model_file, map_location="cpu")
         for k, v in model.state_dict().items():

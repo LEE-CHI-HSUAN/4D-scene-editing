@@ -8,16 +8,16 @@ import torch
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 
 from diffusers.image_processor import VaeImageProcessor
-from diffusers.loaders import LoraLoaderMixin, TextualInversionLoaderMixin
+from diffusers.loaders import StableDiffusionLoraLoaderMixin, TextualInversionLoaderMixin
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
 from diffusers.schedulers import KarrasDiffusionSchedulers
+from diffusers.utils.torch_utils import randn_tensor
 from diffusers.utils import (
     PIL_INTERPOLATION,
     deprecate,
     is_accelerate_available,
     is_accelerate_version,
     logging,
-    randn_tensor,
     BaseOutput,
 )
 
@@ -61,7 +61,7 @@ def preprocess(image):
 class InstructPix2PixOutput(BaseOutput):
     videos: Union[torch.Tensor, np.ndarray]
 
-class InstructPix2PixPipeline(DiffusionPipeline, TextualInversionLoaderMixin, LoraLoaderMixin):
+class InstructPix2PixPipeline(DiffusionPipeline, TextualInversionLoaderMixin, StableDiffusionLoraLoaderMixin):
     _optional_components = ["safety_checker", "feature_extractor"]
 
     def __init__(

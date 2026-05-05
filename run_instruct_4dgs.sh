@@ -23,23 +23,23 @@ echo "  - prompt: \"${PROMPT}\""
 echo "------------------------------------------"
 echo ""
 
-# echo "[1/4] Collect time0 images..."
-# python time0_collect.py --dataset ${DATASET} --scene_name ${SCENE_NAME}
+echo "[1/4] Collect time0 images..."
+python time0_collect.py --dataset ${DATASET} --scene_name ${SCENE_NAME}
 
-# echo ""
+echo ""
 
-# echo "[2/4] edit time0 images..."
-# python ./ip2p_models/multiview_edit.py \
-#     --dataset "${DATASET}" \
-#     --scene "${SCENE_NAME}" \
-#     --prompt "${PROMPT}" \
-#     --resize 1024 \
-#     --steps 20 \
-#     --guidance_scale ${GUIDANCE_SCALE} \
-#     --image_guidance_scale ${IMAGE_GUIDANCE_SCALE}
+echo "[2/4] edit time0 images..."
+python ./ip2p_models/multiview_edit.py \
+    --dataset "${DATASET}" \
+    --scene "${SCENE_NAME}" \
+    --prompt "${PROMPT}" \
+    --resize 1024 \
+    --steps 20 \
+    --guidance_scale ${GUIDANCE_SCALE} \
+    --image_guidance_scale ${IMAGE_GUIDANCE_SCALE}
 
-# echo "✅ Completed time0 image editing."
-# echo ""
+echo "✅ Completed time0 image editing."
+echo ""
 
 echo "[3/4] 3D editing"
 python edit_3d.py \

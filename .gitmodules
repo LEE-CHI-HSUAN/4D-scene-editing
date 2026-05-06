@@ -8,3 +8,6 @@
 [submodule "SIBR_viewers"]
 	path = SIBR_viewers
 	url = https://gitlab.inria.fr/sibr/sibr_core
+[submodule "submodules/mmcv"]
+	path = submodules/mmcv
+	url = https://github.com/open-mmlab/mmcv.git

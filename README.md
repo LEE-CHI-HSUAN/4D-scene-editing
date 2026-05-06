@@ -10,7 +10,6 @@
 > IEEE/CVF Conference on Computer Vision and Pattern Recognition ([CVPR](https://cvpr.thecvf.com/Conferences/2025)), 2025
 
 
-
 ## 🏠 Overview
 Recent 4D dynamic scene editing methods require editing thousands of 2D images used for dynamic scene synthesis and updating the entire scene with additional training loops, resulting in several hours of processing to edit a single dynamic scene. Therefore, these methods are not scalable with respect to the temporal dimension of the dynamic scene (i.e., the number of timesteps). In this work, we propose Instruct-4DGS, an efficient dynamic scene editing method that is more scalable in terms of temporal dimension. To achieve computational efficiency, we leverage a 4D Gaussian representation that models a 4D dynamic scene by combining static 3D Gaussians with a Hexplane-based deformation field, which captures dynamic information. We then perform editing solely on the static 3D Gaussians, which is the minimal but sufficient component required for visual editing. To resolve the misalignment between the edited 3D Gaussians and the deformation field, which may arise from the editing process, we introduce a refinement stage using a score distillation mechanism. Extensive editing results demonstrate that Instruct-4DGS is efficient, reducing editing time by more than half compared to existing methods while achieving high-quality edits that better follow user instructions.
 
@@ -26,20 +25,40 @@ Recent 4D dynamic scene editing methods require editing thousands of 2D images u
 
 
 ## Getting Started
+
 ### Installation
-Follow these steps to set up the necessary environment and packages to run this project.
 
-1. **Install Base Dependencies**
+#### **Install Base Dependencies**
 
-    First, please follow the installation guide in the **[4D Gaussian Splatting (4DGS)](https://github.com/hustvl/4DGaussians)** repository to install the foundational packages.
+This project use [uv](https://docs.astral.sh/uv/getting-started/installation/) to manage packages. If you haven't installed uv, run `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
-2. **Install Additional Packages**
+Then run the following command to install required packages. This takes a long time, so you'd better put it in the background.
 
-    Finally, install the additional packages required for this specific project using the command below.
-    ```bash
-    conda activate Gaussians4D
-    pip install -r requirements.txt
-    ```
+```bash
+uv sync
+```
+
+#### **Install Additional Packages**
+
+There are some packages not managed by uv. We will have to build them.
+First pull the source repositories as submodules.
+
+```bash
+git submodule update --init --recursive
+```
+
+Then set up some environment variables depending on your system setting before launch the building process.
+
+```bash
+export CUDA_HOME=/usr/local/cuda-12.8 # change this
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+uv pip install ./submodules/simple-knn/ --no-build-isolation
+uv pip install ./submodules/depth-diff-gaussian-rasterization/ --no-build-isolation
+uv pip install -e ./submodules/mmcv -v --no-build-isolation
+```
+
+> Building mmcv may take an hour to complete.
 
 ### Data preparation
 Please follow the official 4DGS guide to process your dataset and train the model. 

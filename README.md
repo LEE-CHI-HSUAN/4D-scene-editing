@@ -56,6 +56,7 @@ export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 uv pip install ./submodules/simple-knn/ --no-build-isolation
 uv pip install ./submodules/depth-diff-gaussian-rasterization/ --no-build-isolation
 uv pip install -e ./submodules/mmcv -v --no-build-isolation
+uv pip install -e ./submodules/sam2
 ```
 
 > Building mmcv may take an hour to complete.

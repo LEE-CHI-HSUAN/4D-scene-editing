@@ -10,6 +10,7 @@ dependencies = [
     "diffusers>=0.37.1",
     "einops>=0.8.2",
     "huggingface-hub>=1.13.0",
+    "ipykernel>=7.2.0",
     "lpips>=0.1.4",
     "moviepy>=2.2.1",
     "ninja>=1.13.0",

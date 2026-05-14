@@ -7,6 +7,7 @@ parser.add_argument("--dataset", type=str, required=True, help="Name of the data
 parser.add_argument("--scene_name", type=str, required=True, help="Name of the specific scene (e.g., 'cook_spinach')")
 args = parser.parse_args()
 
+image_ext = 'jpg'
 source_root = f"./data/{args.dataset}/{args.scene_name}"
 destination_folder = f"./data/{args.dataset}/time0_{args.scene_name}"
 
@@ -22,11 +23,11 @@ except FileNotFoundError:
 print(f"Found {len(cam_folders)} 'cam' folders.")
 
 for cam_folder in cam_folders:
-    source_file = os.path.join(source_root, cam_folder, 'images', "0000.png")
+    source_file = os.path.join(source_root, cam_folder, 'images', f"0000.{image_ext}")
     
     if os.path.exists(source_file):
         cam_index = int(cam_folder[3:])
-        dest_filename = f"original_time0_{cam_index}.png"
+        dest_filename = f"original_time0_{cam_index}.{image_ext}"
         shutil.copy(source_file, os.path.join(destination_folder, dest_filename))
     else:
         print(f"Warning: Source file {source_file} does not exist.")
@@ -37,7 +38,7 @@ for i in range(0, 20):
     cam_folder = f"cam{i:02d}"
     source_file = os.path.join(source_root, cam_folder, "frame_00001.jpg")
     if os.path.exists(source_file):
-        dest_filename = f"{args.scene_name}_{i:04d}.png"
+        dest_filename = f"{args.scene_name}_{i:04d}.{image_ext}"
         shutil.copy(source_file, os.path.join(destination_folder, dest_filename))
     else:
         print(f"Warning: Source file {source_file} does not exist.")

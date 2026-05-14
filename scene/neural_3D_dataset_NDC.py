@@ -301,7 +301,7 @@ class Neural3D_NDC_Dataset(Dataset):
         render_poses = self.val_poses
         render_times = torch.linspace(0.0, 1.0, render_poses.shape[0]) * 2.0 - 1.0
         return render_poses, self.time_scale * render_times
-    def load_images_path(self,videos,split):
+    def load_images_path(self,videos,split,image_ext='jpg'):
         image_paths = []
         image_poses = []
         image_times = []
@@ -334,7 +334,7 @@ class Neural3D_NDC_Dataset(Dataset):
                         if self.downsample != 1.0:
 
                             img = video_frame.resize(self.img_wh, Image.LANCZOS)
-                        img.save(os.path.join(image_path,"%04d.png"%count))
+                        img.save(os.path.join(image_path, f"%04d.{image_ext}" % count))
 
                         # img = transform(img)
                         count += 1

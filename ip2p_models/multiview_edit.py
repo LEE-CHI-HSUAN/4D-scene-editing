@@ -48,6 +48,7 @@ pipe = InstructPix2PixPipeline(
         vae=vae, text_encoder=text_encoder, tokenizer=tokenizer, unet=unet,
         scheduler=DDIMScheduler.from_pretrained(DDIM_SOURCE, subfolder="scheduler"),
     )
+pipe.vae.enable_slicing()
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -174,5 +175,9 @@ for i in range(sequence_length):
     save_path = os.path.join(save_dir, filename)
     torchvision.utils.save_image(video[i], save_path)
 
-
-
+save_dir = f"./data/{args.dataset}/{args.scene_name}/time0"
+os.makedirs(save_dir, exist_ok=True)
+for i in range(sequence_length):
+    filename = os.path.basename(files[i])
+    save_path = os.path.join(save_dir, filename)
+    torchvision.utils.save_image(images[i], save_path)

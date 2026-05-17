@@ -90,7 +90,39 @@ You can check the editing results using the script below.
 python render_edited4d.py --configs ./arguments/dynerf/cook_spinach.py --ply_path "./output/dynerf/cook_spinach/point_cloud_refine/Make it look like a fauvism painting/iteration_800/point_cloud.ply" -s ./data/dynerf/cook_spinach --model_path ./output/dynerf/cook_spinach
 ```
 
+##　Partial Editing
 
+Taking cook_spinach as am example. Replace it in the path as needed.
+
+### Mask generation
+
+Generate a grayscale image container the ids of each label/tag for time0 images.
+
+Before starting, you should have `sam-2` installed and run the modified `multiview_edit.py`, which will rescaled time0 images and save them at *<data dir>/time0*.
+
+Then run:
+```bash
+python grounded_sam2_mask_gen.py \
+    --data_dir data/dynerf/cook_spinach/time0 \
+    --output_dir data/dynerf/cook_spinach/object_mask \
+    --prompt "guy. bottle."
+```
+
+Outputs are *png* and their names remain the same as the original time0 images.
+
+### time0 partial editing
+
+The generated result will be used for partial 3D editing.
+
+```bash
+python partial_edit.py \
+    --org_dir data/dynerf/cook_spinach/time0 \
+    --inpaint_dir data/dynerf/cook_spinach/<inpainting_dir> \
+    --mask_dir data/dynerf/cook_spinach/object_mask \
+    --save_dir data/dynerf/cook_spinach/partial_edited
+```
+
+Outputs are *jpg* and their names are 0-padded indices.
 
 ## Acknowledgement
 This work is built on many amazing research works and open-source projects: [4DGS](https://github.com/hustvl/4DGaussians), [Instruct-4D-to-4D](https://github.com/Friedrich-M/Instruct-4D-to-4D), etc. We are grateful for their excellent work and great contributions.

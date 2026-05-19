@@ -122,7 +122,19 @@ python partial_edit.py \
     --save_dir data/dynerf/cook_spinach/partial_edited
 ```
 
-Outputs are *jpg* and their names are 0-padded indices.
+Outputs are *jpg* and their names remain the same as the inpainted time0 images.
+
+### Partial 3D editing
+
+Reused the 3rd step of `.run_instruct_4dgs.sh`, but add an additional argument to the paritial editing DIR.
+
+```diff
+-    --prompt "${PROMPT}"
++    --prompt "${PROMPT}" \
++    --edited_images_path data/dynerf/cook_spinach/partial_edited
+```
+
+Comment out the steps you don't wish to run and just execute the script as before.
 
 ## Acknowledgement
 This work is built on many amazing research works and open-source projects: [4DGS](https://github.com/hustvl/4DGaussians), [Instruct-4D-to-4D](https://github.com/Friedrich-M/Instruct-4D-to-4D), etc. We are grateful for their excellent work and great contributions.

@@ -98,8 +98,7 @@ def main():
         org_img[mask_bool] = inp_img[mask_bool]
 
         # Saving
-        filename = f"{idx:02}.{args.ext}"
-        target_path = sav_path / filename
+        target_path = sav_path / inp_p.name
         
         cv2.imwrite(str(target_path), org_img)
         print(f"Saved: {target_path}")

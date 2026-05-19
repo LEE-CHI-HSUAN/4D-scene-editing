@@ -90,7 +90,7 @@ dict_sear_steak = {
 
 def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations, 
                          checkpoint_iterations, checkpoint, debug_from,
-                         gaussians, scene, stage, tb_writer, train_iter,timer,edited_images_path, prompt, scene_name):
+                         gaussians, scene, stage, tb_writer, train_iter,timer, edited_images_path, prompt, scene_name):
     first_iter = 0
 
     gaussians.training_only3dgs_setup(opt)
@@ -247,12 +247,19 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                 #image = Image.open(os.path.join(edited_images_path, f"edited_{prompt.split(' ')[-1].replace('?', '')}_original_time0_{dict_sear_steak[int(viewpoint_cam.image_name)]}.png))
                 if scene_name not in ['sear_steak', 'coffee_martini', 'cook_spinach'] and scene.maxtime < 6000:
                     raise NotImplementedError("sorry, please check the camera settings manually and set the dict_(scene_name)")
+
+                # figure out the view index, (view_idx - 1) * #frame(300) = image_name
+                view_idx = None
                 if scene_name == 'sear_steak':
-                    image = Image.open(os.path.join(edited_images_path, f"edited_{prompt.split(' ')[-1].replace('?', '')}_original_time0_{dict_sear_steak[int(viewpoint_cam.image_name)]}.png"))
+                    # note: sear_steak can possibly be treated as the other data
+                    view_idx = dict_sear_steak[int(viewpoint_cam.image_name)]
                 elif scene_name == 'coffee_martini':
-                    image = Image.open(os.path.join(edited_images_path, f"edited_{prompt.split(' ')[-1].replace('?', '')}_original_time0_{dict_coffee_martini[int(viewpoint_cam.image_name)]}.png"))
+                    view_idx = dict_coffee_martini[int(viewpoint_cam.image_name)]
                 else:
-                    image = Image.open(os.path.join(edited_images_path, f"edited_{prompt.split(' ')[-1].replace('?', '')}_original_time0_{1+int(viewpoint_cam.image_name)//scene.maxtime}.png"))
+                    view_idx = 1 + int(viewpoint_cam.image_name) // scene.maxtime
+
+                image_name = f"edited_{prompt.split(' ')[-1].replace('?', '')}_original_time0_{view_idx}.jpg"
+                image = Image.open(os.path.join(edited_images_path, image_name))
                 transform = transforms.ToTensor()
                 gt_image = transform(image).cuda()
             else:
@@ -500,6 +507,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default = "")
     parser.add_argument("--scene", type=str, default = "")
     parser.add_argument("--prompt", type=str, default = "")
+    parser.add_argument("--edited_images_path", type=str, default=None)
     
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
@@ -517,9 +525,11 @@ if __name__ == "__main__":
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
 
-    edited_images_path = f"./data/{args.dataset}/{args.scene}/{args.prompt.split(' ')[-1].replace('?', '')}"
+    if args.edited_images_path is None:
+        print("No edited image path provided, assuming full editing.")
+        args.edited_images_path = f"./data/{args.dataset}/{args.scene}/{args.prompt.split(' ')[-1].replace('?', '')}"
 
-    training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, edited_images_path, args.prompt, args.scene)
+    training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, args.edited_images_path, args.prompt, args.scene)
 
     # All done
     print("\nTraining complete.")

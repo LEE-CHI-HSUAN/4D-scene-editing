@@ -86,10 +86,95 @@ def read_points3D_text(path):
                 xyz = np.array(tuple(map(float, elems[1:4])))
                 rgb = np.array(tuple(map(int, elems[4:7])))
                 error = np.array(float(elems[7]))
-                point3D[count] = np.concatenate((xyz, rgb), axis=0)
+                point3D[count] = (xyz[0], xyz[1], xyz[2], rgb[0], rgb[1], rgb[2], error, [])
                 count += 1
 
     return point3D
+
+
+def read_points3D_ply(path):
+    """
+    Load point cloud from a 3DGS PLY file.
+    Converts f_dc (Spherical Harmonics) to RGB colors.
+    """
+    plydata = PlyData.read(path)
+    vertices = plydata['vertex']
+    
+    xyz = np.stack([vertices['x'], vertices['y'], vertices['z']], axis=1)
+    
+    if 'red' in vertices:
+        rgb = np.stack([vertices['red'], vertices['green'], vertices['blue']], axis=1)
+    elif 'f_dc_0' in vertices:
+        # Convert 3DGS f_dc to RGB
+        # SH base constant: 0.28209479177387814
+        C0 = 0.28209479177387814
+        f_dc = np.stack([vertices['f_dc_0'], vertices['f_dc_1'], vertices['f_dc_2']], axis=1)
+        rgb = 0.5 + C0 * f_dc
+        rgb = np.clip(rgb * 255, 0, 255).astype(np.uint8)
+    else:
+        rgb = np.zeros_like(xyz, dtype=np.uint8)
+
+    point3D = {}
+    for i in range(len(xyz)):
+        # (x, y, z, r, g, b, error, track)
+        point3D[i] = (xyz[i, 0], xyz[i, 1], xyz[i, 2], rgb[i, 0], rgb[i, 1], rgb[i, 2], 0, [])
+    
+    return point3D
+
+
+def load_dynerf_cameras(path):
+    """
+    Load camera parameters from DyNeRF poses_bounds.npy.
+    """
+    poses_arr = np.load(os.path.join(path, "poses_bounds.npy"))
+    poses = poses_arr[:, :-2].reshape([-1, 3, 5])  # (N_cams, 3, 5)
+    
+    # DyNeRF format: [H, W, focal] is in the last column
+    H_all, W_all, focal_all = poses[:, :, -1].T
+    
+    # The first 3x4 part is the camera-to-world matrix
+    # DyNeRF coordinate system: [r, u, -f, t]
+    # We need to convert it to a more standard format or handle it in projection
+    # In scene/neural_3D_dataset_NDC.py:
+    # poses = np.concatenate([poses[..., 1:2], -poses[..., :1], poses[..., 2:4]], -1)
+    
+    cameras = {}
+    images = {}
+    
+    for i in range(len(poses)):
+        H, W, focal = H_all[i], W_all[i], focal_all[i]
+        
+        # Pinhole model: [fx, fy, cx, cy]
+        # Assuming principal point is at center
+        fx = fy = focal
+        cx = W / 2.0
+        cy = H / 2.0
+        
+        cameras[i] = (i, "PINHOLE", int(W), int(H), [fx, fy, cx, cy])
+        
+        # Extrinsics
+        # poses[i] is (3, 5), first 3x4 is c2w
+        c2w = poses[i, :3, :4]
+        # Coordinate transformation as per DyNeRF loader:
+        # R = [c2w[:, 1], -c2w[:, 0], c2w[:, 2]]
+        R_c2w = np.stack([c2w[:, 1], -c2w[:, 0], c2w[:, 2]], axis=1)
+        t_c2w = c2w[:, 3].reshape((3, 1))
+        
+        # Convert c2w to w2c
+        R_w2c = R_c2w.T
+        t_w2c = -np.dot(R_w2c, t_c2w)
+        
+        # Convert R to quaternion for _extract_pose_params compatibility
+        # Or just return R, t directly in a custom way. 
+        # For simplicity, we'll store it so it can be extracted.
+        # We'll use a dummy qvec because _extract_pose_params expects it.
+        # But wait, we can just update _extract_pose_params or handle DyNeRF separately.
+        
+        # Let's store R and t directly and add a flag
+        image_name = f"original_time0_{i}.png"
+        images[i] = (i, None, None, i, image_name, None, None, R_w2c, t_w2c)
+        
+    return cameras, images
 
 
 class ID2RGBConverter:
@@ -365,28 +450,40 @@ def _load_and_process_image(label_image_dir, color_image_dir, image_name, conver
 
 
 def _extract_camera_params(camera_data):
-    """Extract camera parameters from COLMAP camera data.
+    """Extract camera parameters from camera data.
     
     Args:
-        camera_data: COLMAP camera data tuple
+        camera_data: Camera data tuple
         
     Returns:
         Tuple of (fx, fy, cx, cy)
     """
-    _, model_type, width, height, params = camera_data
-    fx, fy, cx, cy = params[0], params[1], params[2], params[3]  # Assuming pinhole model
-    return fx, fy, cx, cy
+    # Check if it's DyNeRF format (stored as a list/tuple directly) or COLMAP object
+    if isinstance(camera_data, (list, tuple)):
+        _, model_type, width, height, params = camera_data
+        fx, fy, cx, cy = params[0], params[1], params[2], params[3]
+        return fx, fy, cx, cy
+    else:
+        # COLMAP Camera object
+        fx, fy, cx, cy = camera_data.params[0], camera_data.params[1], camera_data.params[2], camera_data.params[3]
+        return fx, fy, cx, cy
 
 
 def _extract_pose_params(image_data):
-    """Extract pose parameters from COLMAP image data.
+    """Extract pose parameters from image data.
     
     Args:
-        image_data: COLMAP image data tuple
+        image_data: Image data tuple
         
     Returns:
         Tuple of (R, t) where R is rotation matrix and t is translation vector
     """
+    # Check if DyNeRF format (9 elements, R and t at the end)
+    if len(image_data) == 9 and image_data[7] is not None:
+        R = image_data[7]
+        t = image_data[8]
+        return R, t
+        
     _, qvec, tvec, camera_id, image_name, points2D, points3D_ids = image_data
     qw, qx, qy, qz = qvec
     tx, ty, tz = tvec
@@ -461,11 +558,11 @@ def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir,
     all_point_labels = []    
     # Iterate through all views
     for image_id, image_data in images.items():
-        _, qvec, tvec, camera_id, image_name, points2D, points3D_ids = image_data
+        image_name = image_data[4]
         
         # Extract pose and camera parameters
         R, t = _extract_pose_params(image_data)
-        fx, fy, cx, cy = _extract_camera_params(cameras[camera_id])
+        fx, fy, cx, cy = _extract_camera_params(cameras[image_data[3]])
         
         # Load and process images
         color_image, label_image = _load_and_process_image(
@@ -511,11 +608,11 @@ def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, con
     all_point_labels = []    
     # Iterate through all views
     for image_id, image_data in images.items():
-        _, qvec, tvec, camera_id, image_name, points2D, points3D_ids = image_data
+        image_name = image_data[4]
 
         # Extract pose and camera parameters
         R, t = _extract_pose_params(image_data)
-        fx, fy, cx, cy = _extract_camera_params(cameras[camera_id])
+        fx, fy, cx, cy = _extract_camera_params(cameras[image_data[3]])
         
         # Load and process images
         color_image, label_image = _load_and_process_image(
@@ -603,31 +700,56 @@ def main(args):
         args: Command line arguments containing dataset_path, algorithm, and output_ply_name
     """
     dataset_path = args.dataset_path
+    
+    # Check if dataset_path itself is a DyNeRF directory (contains poses_bounds.npy)
+    if os.path.exists(os.path.join(dataset_path, "poses_bounds.npy")) or args.dataset_type == "dynerf":
+        dataset_folders = ["."]
+    else:
+        dataset_folders = os.listdir(dataset_path)
 
-    for dataset_folder in os.listdir(dataset_path):
-        print(f"Processing {dataset_folder}...")
-        label_image_dir = os.path.join(dataset_path, dataset_folder, 'object_mask')
-        color_image_dir = os.path.join(dataset_path, dataset_folder, 'color_mask')
-        # Check if ‘color_mask’ directory exists, if not set to None
+    for dataset_folder in dataset_folders:
+        current_path = os.path.join(dataset_path, dataset_folder)
+        print(f"Processing {current_path}...")
+        
+        label_image_dir = os.path.join(current_path, 'object_mask')
+        color_image_dir = os.path.join(current_path, 'color_mask')
         if not os.path.isdir(color_image_dir):
             color_image_dir = None
-        output_ply_path = os.path.join(dataset_path, dataset_folder, 'sparse/0/' + args.output_ply_name)
+            
+        output_ply_path = os.path.join(current_path, args.output_ply_name)
 
-        # Try to load binary COLMAP files first, then fall back to text files
-        try:
-            camera_file = os.path.join(dataset_path, dataset_folder, 'sparse/0/cameras.bin')
-            image_file = os.path.join(dataset_path, dataset_folder, 'sparse/0/images.bin')
-            points3D_file = os.path.join(dataset_path, dataset_folder,'sparse/0/points3D.bin')
-            cameras = read_intrinsics_binary(camera_file)
-            images = read_extrinsics_binary(image_file)
-            points3D = read_points3D_binary(points3D_file)
-        except:
-            camera_file = os.path.join(dataset_path, dataset_folder, 'colmap/cameras_undistorted.txt')
-            image_file = os.path.join(dataset_path, dataset_folder, 'colmap/images.txt')
-            points3D_file = os.path.join(dataset_path, dataset_folder,'colmap/points3D.txt')            
-            cameras = read_intrinsics_text(camera_file)
-            images = read_extrinsics_text(image_file)
-            points3D = read_points3D_text(points3D_file)
+        # Loading logic
+        if os.path.exists(os.path.join(current_path, "poses_bounds.npy")):
+            print("Detected DyNeRF dataset format...")
+            cameras, images = load_dynerf_cameras(current_path)
+            
+            # Use specified input PLY or look for default
+            ply_path = args.input_ply_path
+            if not ply_path:
+                ply_path = os.path.join(current_path, "points3D_downsample2.ply")
+                
+            if os.path.exists(ply_path):
+                print(f"Loading PLY from {ply_path}...")
+                points3D = read_points3D_ply(ply_path)
+            else:
+                raise FileNotFoundError(f"PLY file not found at {ply_path}")
+        else:
+            # Try to load binary COLMAP files first, then fall back to text files
+            output_ply_path = os.path.join(current_path, 'sparse/0/' + args.output_ply_name)
+            try:
+                camera_file = os.path.join(current_path, 'sparse/0/cameras.bin')
+                image_file = os.path.join(current_path, 'sparse/0/images.bin')
+                points3D_file = os.path.join(current_path,'sparse/0/points3D.bin')
+                cameras = read_intrinsics_binary(camera_file)
+                images = read_extrinsics_binary(image_file)
+                points3D = read_points3D_binary(points3D_file)
+            except:
+                camera_file = os.path.join(current_path, 'colmap/cameras_undistorted.txt')
+                image_file = os.path.join(current_path, 'colmap/images.txt')
+                points3D_file = os.path.join(current_path,'colmap/points3D.txt')            
+                cameras = read_intrinsics_text(camera_file)
+                images = read_extrinsics_text(image_file)
+                points3D = read_points3D_text(points3D_file)
 
         converter = ID2RGBConverter()
 
@@ -674,6 +796,19 @@ if __name__ == "__main__":
         type=str, 
         default='points3D_corr.ply', 
         help='Output PLY file name'
+    )
+    parser.add_argument(
+        '--input_ply_path',
+        type=str,
+        default='',
+        help='Specific path to input PLY file (optional)'
+    )
+    parser.add_argument(
+        '--dataset_type',
+        type=str,
+        default='colmap',
+        choices=['colmap', 'dynerf'],
+        help='Type of dataset (colmap or dynerf)'
     )
     args = parser.parse_args()
     main(args)

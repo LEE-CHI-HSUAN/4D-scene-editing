@@ -137,3 +137,70 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             "radii": radii,
             "depth":depth}
 
+def render_pcd(viewpoint_camera, pcd, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, cam_type=None):
+    """
+    Render a point cloud.
+    """
+    means3D = torch.tensor(pcd.points).float().cuda()
+    colors = torch.tensor(pcd.colors).float().cuda()
+
+    # Create zero tensor for screenspace points
+    screenspace_points = torch.zeros_like(means3D, dtype=means3D.dtype, requires_grad=True, device="cuda") + 0
+    try:
+        screenspace_points.retain_grad()
+    except:
+        pass
+
+    # Set up rasterization configuration
+    if cam_type != "PanopticSports":
+        tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
+        tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
+        raster_settings = GaussianRasterizationSettings(
+            image_height=int(viewpoint_camera.image_height),
+            image_width=int(viewpoint_camera.image_width),
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=bg_color,
+            scale_modifier=scaling_modifier,
+            viewmatrix=viewpoint_camera.world_view_transform.cuda(),
+            projmatrix=viewpoint_camera.full_proj_transform.cuda(),
+            sh_degree=0,
+            campos=viewpoint_camera.camera_center.cuda(),
+            prefiltered=False,
+            debug=pipe.debug
+        )
+    else:
+        raster_settings = viewpoint_camera['camera']
+
+    rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+
+    means2D = screenspace_points
+    
+    # Default properties for point cloud rendering
+    num_points = means3D.shape[0]
+    opacity = torch.ones((num_points, 1), device="cuda")
+    
+    # Use a small constant scale for points
+    scales = torch.ones((num_points, 3), device="cuda") * 0.001
+    
+    # Identity rotations
+    rotations = torch.zeros((num_points, 4), device="cuda")
+    rotations[:, 0] = 1
+
+    # Rasterize
+    rendered_image, radii, depth = rasterizer(
+        means3D = means3D,
+        means2D = means2D,
+        shs = None,
+        colors_precomp = colors,
+        opacities = opacity,
+        scales = scales,
+        rotations = rotations,
+        cov3D_precomp = None)
+
+    return {"render": rendered_image,
+            "viewspace_points": screenspace_points,
+            "visibility_filter" : radii > 0,
+            "radii": radii,
+            "depth":depth}
+

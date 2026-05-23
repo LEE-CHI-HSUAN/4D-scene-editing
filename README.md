@@ -87,7 +87,11 @@ bash run_instruct_4dgs.sh dynerf cook_spinach "Make it look like a fauvism paint
 
 You can check the editing results using the script below.
 ```bash
-python render_edited4d.py --configs ./arguments/dynerf/cook_spinach.py --ply_path "./output/dynerf/cook_spinach/point_cloud_refine/Make it look like a fauvism painting/iteration_800/point_cloud.ply" -s ./data/dynerf/cook_spinach --model_path ./output/dynerf/cook_spinach
+python render_edited4d.py \
+    --configs ./arguments/dynerf/cook_spinach.py \
+    --ply_path "./output/dynerf/cook_spinach/point_cloud_refine/Make it look like a fauvism painting/iteration_800/point_cloud.ply" \
+    -s ./data/dynerf/cook_spinach \
+    --model_path ./output/dynerf/cook_spinach
 ```
 
 ##　Partial Editing
@@ -135,6 +139,32 @@ Reused the 3rd step of `.run_instruct_4dgs.sh`, but add an additional argument t
 ```
 
 Comment out the steps you don't wish to run and just execute the script as before.
+
+## 3D segmentation
+
+We borrow the code from [ObjectGS](https://github.com/RuijieZhu94/ObjectGS/blob/main/PLY_PREPROCESSING_README.md) and made modification.
+
+You must have generated time0 masks using `grounded_sam2_mask_gen.py`.
+Run this to generate the labeled point cloud. Currently it will override point colors.
+
+```bash
+PYTHONPATH=. python ObjectGS/ply_preprocessing.py \
+    --dataset_path data/dynerf/cook_spinach \
+    --input_ply_path output/dynerf/cook_spinach/point_cloud/iteration_14000/point_cloud.ply \
+    --algorithm majority \
+    --invert \
+    --output_ply_name points3D_majority.ply
+```
+
+Visualize the result by rendering a video:
+
+```
+python render_objects.py \
+    --configs ./arguments/dynerf/cook_spinach.py \
+    --ply_path "data/dynerf/cook_spinach/points3D_majority.ply" \
+    -s ./data/dynerf/cook_spinach \
+    --model_path ./output/dynerf/cook_spinach
+```
 
 ## Acknowledgement
 This work is built on many amazing research works and open-source projects: [4DGS](https://github.com/hustvl/4DGaussians), [Instruct-4D-to-4D](https://github.com/Friedrich-M/Instruct-4D-to-4D), etc. We are grateful for their excellent work and great contributions.

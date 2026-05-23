@@ -415,7 +415,7 @@ def quaternion_to_rotation_matrix(qw, qx, qy, qz):
     return R
 
 
-def _load_and_process_image(label_image_dir, color_image_dir, image_name, converter):
+def _load_and_process_image(label_image_dir, color_image_dir, image_name, converter, save_color_image_dir=None):
     """Load and process label and color images for a given view.
     
     Args:
@@ -423,6 +423,7 @@ def _load_and_process_image(label_image_dir, color_image_dir, image_name, conver
         color_image_dir: Directory containing color images (can be None)
         image_name: Name of the image file
         converter: ID2RGBConverter instance
+        save_color_image_dir: Directory to save the generated color image (can be None)
         
     Returns:
         Tuple of (color_image, label_image)
@@ -445,6 +446,13 @@ def _load_and_process_image(label_image_dir, color_image_dir, image_name, conver
                 obj_id = label_image[i, j]
                 _, rgb_color = converter.convert(obj_id)
                 color_image[i, j] = rgb_color
+        print(f"converter ids: {converter.obj_to_id.keys()}")
+        # Save the generated color image if requested
+        if save_color_image_dir is not None:
+            os.makedirs(save_color_image_dir, exist_ok=True)
+            save_path = os.path.join(save_color_image_dir, image_name)
+            save_path = save_path.replace('.jpg', '.png').replace('.JPG', '.png')
+            cv2.imwrite(save_path, color_image)
     
     return color_image, label_image
 
@@ -494,6 +502,7 @@ def _extract_pose_params(image_data):
     
     return R, t
 
+_project_print_count = 2
 def project_points(points3D, R, t, fx, fy, cx, cy):
     """Project 3D points to 2D image plane.
     
@@ -507,6 +516,26 @@ def project_points(points3D, R, t, fx, fy, cx, cy):
     Returns:
         List of projected points (point_id, u, v)
     """
+    global _project_print_count
+    if _project_print_count > 0:
+        print(f"\n[DEBUG] project_points call {_project_print_count}")
+        print(f"R:\n{R}")
+        print(f"t:\n{t}")
+        print(f"Intrinsics: fx={fx}, fy={fy}, cx={cx}, cy={cy}")
+        
+        # Print first 3 points projection for inspection
+        count = 0
+        for pid, pdata in points3D.items():
+            if count >= 3: break
+            point = np.array([pdata[0], pdata[1], pdata[2]]).reshape(3, 1)
+            cam_point = np.dot(R, point) + t
+            x, y, z = cam_point.flatten()
+            u = fx * (x / z) + cx
+            v = fy * (y / z) + cy
+            print(f"  Point {pid}: world={point.flatten()}, cam={[x,y,z]}, uv=({u}, {v})")
+            count += 1
+        _project_print_count -= 1
+
     projected_points = []
     for point_id, point_data in points3D.items():
         point = np.array([point_data[0], point_data[1], point_data[2]]).reshape(3, 1)
@@ -542,6 +571,40 @@ def get_point_colors_from_image(projected_points, color_image, label_image):
     return point_colors, point_labels
 
 
+def draw_points_on_image(image, projected_points, point_colors, output_path, point_radius=3):
+    """Draw projected points on an image with colors from point_colors.
+    
+    Args:
+        image: The base image (numpy array, BGR format from OpenCV)
+        projected_points: List of projected points (point_id, u, v)
+        point_colors: List of (point_id, color) tuples where color is BGR
+        output_path: Path to save the visualization
+        point_radius: Radius of the circle to draw for each point
+    """
+    # Create a copy of the image to draw on
+    image_with_points = image.copy()
+    
+    # Build a dict for quick color lookup by point_id
+    color_dict = {pid: color for pid, color in point_colors}
+    
+    # Draw each projected point
+    for point_id, u, v in projected_points:
+        if 0 <= u < image.shape[1] and 0 <= v < image.shape[0]:
+            if point_id in color_dict:
+                # Get the color for this point
+                color = color_dict[point_id]
+                # Convert to tuple of ints for OpenCV (BGR format)
+                color_bgr = tuple(int(c) for c in color)
+                # Draw a circle at the projected position
+                cv2.circle(image_with_points, (int(u), int(v)), point_radius, color_bgr, -1)
+    
+    # Save the image
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    cv2.imwrite(output_path, image_with_points)
+    
+    print(f"Point visualization saved to {output_path}")
+
+
 def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path):
     """Perform majority voting to assign colors and labels to 3D points.
     
@@ -555,7 +618,15 @@ def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir,
         output_ply_path: Output PLY file path
     """
     all_point_colors = []
-    all_point_labels = []    
+    all_point_labels = []
+    
+    # Determine save directory for color images if they are being generated
+    save_color_image_dir = None
+    if color_image_dir is None:
+        # Assuming label_image_dir is something like '.../object_mask',
+        # we'll save color images to '.../color_mask'
+        save_color_image_dir = os.path.join(os.path.dirname(label_image_dir), 'color_mask')
+
     # Iterate through all views
     for image_id, image_data in images.items():
         image_name = image_data[4]
@@ -566,7 +637,8 @@ def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir,
         
         # Load and process images
         color_image, label_image = _load_and_process_image(
-            label_image_dir, color_image_dir, image_name, converter
+            label_image_dir, color_image_dir, image_name, converter,
+            save_color_image_dir=save_color_image_dir
         )
 
         # Project point cloud to current view
@@ -578,6 +650,11 @@ def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir,
         # Save results
         all_point_colors.extend(point_colors)
         all_point_labels.extend(point_labels)
+        
+        # Draw points on image and save
+        if projected_points:
+            vis_output_path = output_ply_path.replace('.ply', f'_debug/view_{image_id:03d}_points.png')
+            draw_points_on_image(color_image, projected_points, point_colors, vis_output_path)
 
     # Calculate final colors for each point and update point cloud colors
     points3D = majority_assign_final_colors(points3D, all_point_colors, all_point_labels)
@@ -605,7 +682,13 @@ def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, con
         output_ply_path: Output PLY file path
     """
     all_point_colors = []
-    all_point_labels = []    
+    all_point_labels = []
+    
+    # Determine save directory for color images if they are being generated
+    save_color_image_dir = None
+    if color_image_dir is None:
+        save_color_image_dir = os.path.join(os.path.dirname(label_image_dir), 'color_mask')
+
     # Iterate through all views
     for image_id, image_data in images.items():
         image_name = image_data[4]
@@ -616,7 +699,8 @@ def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, con
         
         # Load and process images
         color_image, label_image = _load_and_process_image(
-            label_image_dir, color_image_dir, image_name, converter
+            label_image_dir, color_image_dir, image_name, converter,
+            save_color_image_dir=save_color_image_dir
         )
 
         # Project point cloud to current view
@@ -628,6 +712,11 @@ def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, con
         # Save results
         all_point_colors.extend(point_colors)
         all_point_labels.extend(point_labels)
+        
+        # Draw points on image and save
+        if projected_points:
+            vis_output_path = output_ply_path.replace('.ply', f'_debug/view_{image_id:03d}_points.png')
+            draw_points_on_image(color_image, projected_points, point_colors, vis_output_path)
 
     # Calculate final colors for each point using probability-based voting
     points3D = prob_assign_final_colors(points3D, all_point_colors, all_point_labels)
@@ -652,6 +741,10 @@ def corr_voting(images, points3D, label_image_dir, converter, output_ply_path):
         converter: ID2RGBConverter instance
         output_ply_path: Output PLY file path
     """
+    # Ensure color_mask directory exists if we want to save generated color images
+    save_color_image_dir = os.path.join(os.path.dirname(label_image_dir), 'color_mask')
+    processed_images = set()
+
     all_colors = []
     all_labels = []
     for point3D_id, point_data in points3D.items():
@@ -676,6 +769,24 @@ def corr_voting(images, points3D, label_image_dir, converter, output_ply_path):
 
             obj_id = label_image[v, u]
             _, rgb_color = converter.convert(obj_id)
+
+            # Save color image if not already processed
+            if image_name not in processed_images:
+                color_image = np.zeros((label_image.shape[0], label_image.shape[1], 3), dtype=np.uint8)
+                # This might be slow if done for every image, but corr_voting 
+                # doesn't naturally iterate over images first.
+                # To be efficient, we only do this once per image.
+                for i in range(label_image.shape[0]):
+                    for j in range(label_image.shape[1]):
+                        oid = label_image[i, j]
+                        _, rc = converter.convert(oid)
+                        color_image[i, j] = rc
+                
+                os.makedirs(save_color_image_dir, exist_ok=True)
+                save_path = os.path.join(save_color_image_dir, image_name)
+                save_path = save_path.replace('.jpg', '.png').replace('.JPG', '.png')
+                cv2.imwrite(save_path, color_image)
+                processed_images.add(image_name)
 
             all_colors.append((point3D_id, rgb_color))
             all_labels.append((point3D_id, obj_id))

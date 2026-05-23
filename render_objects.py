@@ -76,6 +76,32 @@ if __name__ == "__main__":
     to8b = lambda x : (255*np.clip(x.cpu().numpy(),0,1)).astype(np.uint8)
     pipeline_params = pipeline.extract(args)
     for idx, viewpoint_camera in enumerate(tqdm(cameras, desc="Rendering progress")):
+        if idx < 2:
+            print(f"\n[DEBUG] Rendering camera {idx}: {viewpoint_camera.image_name}")
+            print(f"FoVx: {viewpoint_camera.FoVx}, FoVy: {viewpoint_camera.FoVy}")
+            print(f"Width: {viewpoint_camera.image_width}, Height: {viewpoint_camera.image_height}")
+            print(f"WorldViewTransform:\n{viewpoint_camera.world_view_transform}")
+            
+            # Manual projection for inspection/comparison
+            W = viewpoint_camera.image_width
+            H = viewpoint_camera.image_height
+            fx = W / (2 * math.tan(viewpoint_camera.FoVx * 0.5))
+            fy = H / (2 * math.tan(viewpoint_camera.FoVy * 0.5))
+            cx = W / 2.0
+            cy = H / 2.0
+            print(f"Computed Intrinsics: fx={fx}, fy={fy}, cx={cx}, cy={cy}")
+
+            # Project first 3 points from pcd
+            pts = pcd.points[:3]
+            pts_hom = np.concatenate([pts, np.ones((pts.shape[0], 1))], axis=1)
+            # viewpoint_camera.world_view_transform is W2V^T, so we use it for right multiplication
+            cam_pts = pts_hom @ viewpoint_camera.world_view_transform.cpu().numpy()
+            for i in range(len(pts)):
+                x, y, z = cam_pts[i, :3]
+                u = fx * (x / z) + cx
+                v = fy * (y / z) + cy
+                print(f"  Point {i}: world={pts[i]}, cam={[x,y,z]}, uv=({u}, {v})")
+
         rendering = render_pcd(viewpoint_camera, pcd, pipeline_params, background, cam_type=cam_type, scaling_modifier=3.0)
         rendered_img = rendering["render"]
         imgs.append(to8b(rendered_img.detach().cpu()).transpose(1,2,0))

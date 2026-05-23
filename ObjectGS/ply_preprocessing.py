@@ -141,8 +141,27 @@ def load_dynerf_cameras(path):
     cameras = {}
     images = {}
     
+    # Detect image size from object_mask to match intrinsics
+    mask_dir = os.path.join(path, "object_mask")
+    downsample = 1.0
+    if os.path.exists(mask_dir):
+        mask_files = [f for f in os.listdir(mask_dir) if f.endswith('.png')]
+        if mask_files:
+            mask_path = os.path.join(mask_dir, mask_files[0])
+            mask_img = cv2.imread(mask_path, -1)
+            if mask_img is not None:
+                mask_h, mask_w = mask_img.shape[:2]
+                downsample = W_all[0] / mask_w
+                print(f"Detected mask size: {mask_w}x{mask_h}, Original size: {W_all[0]}x{H_all[0]}")
+                print(f"Applying downsample factor: {downsample}")
+
     for i in range(len(poses)):
         H, W, focal = H_all[i], W_all[i], focal_all[i]
+        
+        # Apply downsample
+        H = H / downsample
+        W = W / downsample
+        focal = focal / downsample
         
         # Pinhole model: [fx, fy, cx, cy]
         # Assuming principal point is at center

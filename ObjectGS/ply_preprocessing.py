@@ -522,7 +522,7 @@ def _extract_pose_params(image_data):
     return R, t
 
 _project_print_count = 2
-def project_points(points3D, R, t, fx, fy, cx, cy):
+def project_points(points3D, R, t, fx, fy, cx, cy, invert=False, width=None):
     """Project 3D points to 2D image plane.
     
     Args:
@@ -531,6 +531,8 @@ def project_points(points3D, R, t, fx, fy, cx, cy):
         t: Translation vector (3x1)
         fx, fy: Focal lengths
         cx, cy: Principal point coordinates
+        invert: Whether to flip points horizontally
+        width: Image width (required if invert is True)
         
     Returns:
         List of projected points (point_id, u, v)
@@ -541,6 +543,7 @@ def project_points(points3D, R, t, fx, fy, cx, cy):
         print(f"R:\n{R}")
         print(f"t:\n{t}")
         print(f"Intrinsics: fx={fx}, fy={fy}, cx={cx}, cy={cy}")
+        print(f"Invert: {invert}, Width: {width}")
         
         # Print first 3 points projection for inspection
         count = 0
@@ -551,6 +554,8 @@ def project_points(points3D, R, t, fx, fy, cx, cy):
             x, y, z = cam_point.flatten()
             u = fx * (x / z) + cx
             v = fy * (y / z) + cy
+            if invert and width is not None:
+                u = width - 1 - u
             print(f"  Point {pid}: world={point.flatten()}, cam={[x,y,z]}, uv=({u}, {v})")
             count += 1
         _project_print_count -= 1
@@ -564,6 +569,10 @@ def project_points(points3D, R, t, fx, fy, cx, cy):
         # Project 3D point to 2D image using camera intrinsics
         u = fx * (x / z) + cx
         v = fy * (y / z) + cy
+        
+        if invert and width is not None:
+            u = width - 1 - u
+            
         projected_points.append((point_id, int(u), int(v)))
     return projected_points
 
@@ -590,7 +599,7 @@ def get_point_colors_from_image(projected_points, color_image, label_image):
     return point_colors, point_labels
 
 
-def draw_points_on_image(image, projected_points, point_colors, output_path, point_radius=3):
+def draw_points_on_image(image, projected_points, point_colors, output_path, point_radius=1):
     """Draw projected points on an image with colors from point_colors.
     
     Args:
@@ -601,7 +610,7 @@ def draw_points_on_image(image, projected_points, point_colors, output_path, poi
         point_radius: Radius of the circle to draw for each point
     """
     # Create a copy of the image to draw on
-    image_with_points = image.copy()
+    image_with_points = np.zeros_like(image, dtype=np.float32)
     
     # Build a dict for quick color lookup by point_id
     color_dict = {pid: color for pid, color in point_colors}
@@ -624,7 +633,7 @@ def draw_points_on_image(image, projected_points, point_colors, output_path, poi
     print(f"Point visualization saved to {output_path}")
 
 
-def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path):
+def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=False):
     """Perform majority voting to assign colors and labels to 3D points.
     
     Args:
@@ -635,6 +644,7 @@ def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir,
         color_image_dir: Directory containing color images (optional)
         converter: ID2RGBConverter instance
         output_ply_path: Output PLY file path
+        invert: Whether to flip points horizontally
     """
     all_point_colors = []
     all_point_labels = []
@@ -661,7 +671,8 @@ def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir,
         )
 
         # Project point cloud to current view
-        projected_points = project_points(points3D, R, t, fx, fy, cx, cy)
+        image_height, image_width = color_image.shape[:2]
+        projected_points = project_points(points3D, R, t, fx, fy, cx, cy, invert=invert, width=image_width)
 
         # Get color for each point in this view
         point_colors, point_labels = get_point_colors_from_image(projected_points, color_image, label_image)
@@ -688,7 +699,7 @@ def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir,
 
     print(f"Point cloud saved to {output_ply_path}")
 
-def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path):
+def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=False):
     """Perform probability-based voting to assign colors and labels to 3D points.
     
     Args:
@@ -699,6 +710,7 @@ def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, con
         color_image_dir: Directory containing color images (optional)
         converter: ID2RGBConverter instance
         output_ply_path: Output PLY file path
+        invert: Whether to flip points horizontally
     """
     all_point_colors = []
     all_point_labels = []
@@ -723,7 +735,8 @@ def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, con
         )
 
         # Project point cloud to current view
-        projected_points = project_points(points3D, R, t, fx, fy, cx, cy)
+        image_height, image_width = color_image.shape[:2]
+        projected_points = project_points(points3D, R, t, fx, fy, cx, cy, invert=invert, width=image_width)
 
         # Get color for each point in this view
         point_colors, point_labels = get_point_colors_from_image(projected_points, color_image, label_image)
@@ -886,10 +899,10 @@ def main(args):
         # Apply selected voting algorithm
         if args.algorithm == 'majority':
             print("Using majority voting...")
-            majority_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path)
+            majority_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=args.invert)
         elif args.algorithm == 'prob':
             print("Using probability-based voting...")
-            prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path)
+            prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=args.invert)
         elif args.algorithm == 'corr':
             print("Using correlation-based voting...")
             corr_voting(images, points3D, label_image_dir, converter, output_ply_path)
@@ -939,6 +952,11 @@ if __name__ == "__main__":
         default='colmap',
         choices=['colmap', 'dynerf'],
         help='Type of dataset (colmap or dynerf)'
+    )
+    parser.add_argument(
+        '--invert',
+        action='store_true',
+        help='Enable horizontal flipping of the projected points'
     )
     args = parser.parse_args()
     main(args)

@@ -419,6 +419,55 @@ def storePly(path, xyz, rgb, label):
     ply_data = PlyData([vertex_element])
     ply_data.write(path)
 
+def storePlyRetain(input_path, output_path, label_dict):
+    """Save point cloud data by retaining original properties and adding/updating 'label'.
+    
+    Args:
+        input_path: Original PLY file path
+        output_path: Output PLY file path
+        label_dict: Dictionary mapping vertex index to label value
+    """
+    plydata = PlyData.read(input_path)
+    vertices = plydata['vertex']
+    
+    # Prepare labels array
+    num_vertices = len(vertices)
+    labels = np.zeros(num_vertices, dtype=np.uint8)
+    for idx, label in label_dict.items():
+        if 0 <= idx < num_vertices:
+            labels[idx] = label
+            
+    # Check if 'label' already exists
+    if 'label' in vertices.data.dtype.names:
+        # Update existing label
+        vertices.data['label'] = labels
+    else:
+        # Add 'label' property
+        # Create new dtype
+        new_dtype = vertices.data.dtype.descr + [('label', 'u1')]
+        new_data = np.empty(num_vertices, dtype=new_dtype)
+        
+        # Copy old data
+        for name in vertices.data.dtype.names:
+            print(f"Found property: {name}")
+            new_data[name] = vertices.data[name]
+        
+        # Add new labels
+        new_data['label'] = labels
+        
+        # Create new vertex element
+        new_vertex_element = PlyElement.describe(new_data, 'vertex')
+        
+        # Replace vertex element in plydata
+        # Note: PlyData is immutable-ish in some versions, but we can reconstruct it
+        elements = list(plydata.elements)
+        for i, el in enumerate(elements):
+            if el.name == 'vertex':
+                elements[i] = new_vertex_element
+        plydata = PlyData(elements, text=plydata.text, comments=plydata.comments)
+        
+    plydata.write(output_path)
+
 def quaternion_to_rotation_matrix(qw, qx, qy, qz):
     """Convert quaternion to rotation matrix.
     
@@ -633,7 +682,7 @@ def draw_points_on_image(image, projected_points, point_colors, output_path, poi
     print(f"Point visualization saved to {output_path}")
 
 
-def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=False):
+def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=False, input_ply_path=None, add_label_only=False):
     """Perform majority voting to assign colors and labels to 3D points.
     
     Args:
@@ -645,6 +694,8 @@ def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir,
         converter: ID2RGBConverter instance
         output_ply_path: Output PLY file path
         invert: Whether to flip points horizontally
+        input_ply_path: Original PLY file path for retaining properties
+        add_label_only: Whether to only add label to the original PLY
     """
     all_point_colors = []
     all_point_labels = []
@@ -689,17 +740,21 @@ def majority_voting(images, points3D, cameras, label_image_dir, color_image_dir,
     # Calculate final colors for each point and update point cloud colors
     points3D = majority_assign_final_colors(points3D, all_point_colors, all_point_labels)
 
-    # Extract point cloud coordinates and colors
-    xyz = np.array([[point_data[0], point_data[1], point_data[2]] for point_data in points3D.values()])
-    rgb = np.array([[point_data[3], point_data[4], point_data[5]] for point_data in points3D.values()])
-    label = np.array([[point_data[6]] for point_data in points3D.values()])
+    if add_label_only and input_ply_path and os.path.exists(input_ply_path):
+        label_dict = {pid: pdata[6] for pid, pdata in points3D.items()}
+        storePlyRetain(input_ply_path, output_ply_path, label_dict)
+    else:
+        # Extract point cloud coordinates and colors
+        xyz = np.array([[point_data[0], point_data[1], point_data[2]] for point_data in points3D.values()])
+        rgb = np.array([[point_data[3], point_data[4], point_data[5]] for point_data in points3D.values()])
+        label = np.array([[point_data[6]] for point_data in points3D.values()])
 
-    # Save point cloud as PLY file
-    storePly(output_ply_path, xyz, rgb, label)
+        # Save point cloud as PLY file
+        storePly(output_ply_path, xyz, rgb, label)
 
     print(f"Point cloud saved to {output_ply_path}")
 
-def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=False):
+def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=False, input_ply_path=None, add_label_only=False):
     """Perform probability-based voting to assign colors and labels to 3D points.
     
     Args:
@@ -711,6 +766,8 @@ def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, con
         converter: ID2RGBConverter instance
         output_ply_path: Output PLY file path
         invert: Whether to flip points horizontally
+        input_ply_path: Original PLY file path for retaining properties
+        add_label_only: Whether to only add label to the original PLY
     """
     all_point_colors = []
     all_point_labels = []
@@ -724,7 +781,7 @@ def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, con
     for image_id, image_data in images.items():
         image_name = image_data[4]
 
-        # Extract pose and camera parameters
+        # Extract some camera and pose parameters
         R, t = _extract_pose_params(image_data)
         fx, fy, cx, cy = _extract_camera_params(cameras[image_data[3]])
         
@@ -753,17 +810,21 @@ def prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, con
     # Calculate final colors for each point using probability-based voting
     points3D = prob_assign_final_colors(points3D, all_point_colors, all_point_labels)
 
-    # Extract point cloud coordinates and colors
-    xyz = np.array([[point_data[0], point_data[1], point_data[2]] for point_data in points3D.values()])
-    rgb = np.array([[point_data[3], point_data[4], point_data[5]] for point_data in points3D.values()])
-    label = np.array([[point_data[6]] for point_data in points3D.values()])
+    if add_label_only and input_ply_path and os.path.exists(input_ply_path):
+        label_dict = {pid: pdata[6] for pid, pdata in points3D.items()}
+        storePlyRetain(input_ply_path, output_ply_path, label_dict)
+    else:
+        # Extract point cloud coordinates and colors
+        xyz = np.array([[point_data[0], point_data[1], point_data[2]] for point_data in points3D.values()])
+        rgb = np.array([[point_data[3], point_data[4], point_data[5]] for point_data in points3D.values()])
+        label = np.array([[point_data[6]] for point_data in points3D.values()])
 
-    # Save point cloud as PLY file
-    storePly(output_ply_path, xyz, rgb, label)
+        # Save point cloud as PLY file
+        storePly(output_ply_path, xyz, rgb, label)
 
     print(f"Point cloud saved to {output_ply_path}")
 
-def corr_voting(images, points3D, label_image_dir, converter, output_ply_path):
+def corr_voting(images, points3D, label_image_dir, converter, output_ply_path, input_ply_path=None, add_label_only=False):
     """Perform correlation-based voting using track correspondence.
     
     Args:
@@ -772,6 +833,8 @@ def corr_voting(images, points3D, label_image_dir, converter, output_ply_path):
         label_image_dir: Directory containing label images
         converter: ID2RGBConverter instance
         output_ply_path: Output PLY file path
+        input_ply_path: Original PLY file path for retaining properties
+        add_label_only: Whether to only add label to the original PLY
     """
     # Ensure color_mask directory exists if we want to save generated color images
     save_color_image_dir = os.path.join(os.path.dirname(label_image_dir), 'color_mask')
@@ -827,12 +890,16 @@ def corr_voting(images, points3D, label_image_dir, converter, output_ply_path):
     # Assign colors and labels through voting
     points3D = corr_assign_final_colors(points3D, all_colors, all_labels)
 
-    # Extract and save
-    xyz = np.array([[p[0], p[1], p[2]] for p in points3D.values()])
-    rgb = np.array([[p[3], p[4], p[5]] for p in points3D.values()])
-    label = np.array([[p[6]] for p in points3D.values()])
+    if add_label_only and input_ply_path and os.path.exists(input_ply_path):
+        label_dict = {pid: pdata[6] for pid, pdata in points3D.items()}
+        storePlyRetain(input_ply_path, output_ply_path, label_dict)
+    else:
+        # Extract and save
+        xyz = np.array([[p[0], p[1], p[2]] for p in points3D.values()])
+        rgb = np.array([[p[3], p[4], p[5]] for p in points3D.values()])
+        label = np.array([[p[6]] for p in points3D.values()])
 
-    storePly(output_ply_path, xyz, rgb, label)
+        storePly(output_ply_path, xyz, rgb, label)
     print(f"Point cloud saved to {output_ply_path}")
 
 
@@ -896,16 +963,26 @@ def main(args):
 
         converter = ID2RGBConverter()
 
+        # Determine input PLY path if available for retention
+        input_ply_path = args.input_ply_path
+        if not input_ply_path:
+            if os.path.exists(os.path.join(current_path, "poses_bounds.npy")):
+                input_ply_path = os.path.join(current_path, "points3D_downsample2.ply")
+            elif os.path.exists(os.path.join(current_path, "sparse/0/points3D.bin")):
+                # This is a heuristic, but often people want to add labels to a specific PLY
+                # We'll check if the user provided one, otherwise we don't have a default for COLMAP
+                pass
+
         # Apply selected voting algorithm
         if args.algorithm == 'majority':
             print("Using majority voting...")
-            majority_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=args.invert)
+            majority_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=args.invert, input_ply_path=input_ply_path, add_label_only=args.add_label_only)
         elif args.algorithm == 'prob':
             print("Using probability-based voting...")
-            prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=args.invert)
+            prob_voting(images, points3D, cameras, label_image_dir, color_image_dir, converter, output_ply_path, invert=args.invert, input_ply_path=input_ply_path, add_label_only=args.add_label_only)
         elif args.algorithm == 'corr':
             print("Using correlation-based voting...")
-            corr_voting(images, points3D, label_image_dir, converter, output_ply_path)
+            corr_voting(images, points3D, label_image_dir, converter, output_ply_path, input_ply_path=input_ply_path, add_label_only=args.add_label_only)
         else:
             raise ValueError("Unknown algorithm. Choose from 'majority', 'prob', or 'corr'.")
 
@@ -957,6 +1034,11 @@ if __name__ == "__main__":
         '--invert',
         action='store_true',
         help='Enable horizontal flipping of the projected points'
+    )
+    parser.add_argument(
+        '--add_label_only',
+        action='store_true',
+        help='If set, retain original point cloud data and only add/update the "label" property'
     )
     args = parser.parse_args()
     main(args)

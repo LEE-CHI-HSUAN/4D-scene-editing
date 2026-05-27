@@ -437,23 +437,26 @@ def storePlyRetain(input_path, output_path, label_dict):
         if 0 <= idx < num_vertices:
             labels[idx] = label
             
-    # Check if 'label' already exists
-    if 'label' in vertices.data.dtype.names:
-        # Update existing label
-        vertices.data['label'] = labels
+    # Create new dtype that includes 'label'
+    original_dtype = vertices.data.dtype
+    if 'label' in original_dtype.names:
+        # If 'label' already exists, we use the original dtype
+        new_dtype = original_dtype
     else:
-        # Add 'label' property
-        # Create new dtype
-        new_dtype = vertices.data.dtype.descr + [('label', 'u1')]
-        new_data = np.empty(num_vertices, dtype=new_dtype)
-        
-        # Copy old data
-        for name in vertices.data.dtype.names:
-            print(f"Found property: {name}")
-            new_data[name] = vertices.data[name]
-        
-        # Add new labels
+        # Add 'label' to the end of the dtype
+        new_dtype = np.dtype(original_dtype.descr + [('label', 'u1')])
+    
+    new_data = np.empty(num_vertices, dtype=new_dtype)
+    
+    # Copy all original properties
+    for name in original_dtype.names:
+        new_data[name] = vertices.data[name]
+    
+        # Add/Update the 'label' property
         new_data['label'] = labels
+        
+        # Ensure standard strides for PyTorch compatibility
+        new_data = np.array(new_data, copy=True)
         
         # Create new vertex element
         new_vertex_element = PlyElement.describe(new_data, 'vertex')

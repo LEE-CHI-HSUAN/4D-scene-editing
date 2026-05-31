@@ -137,7 +137,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             "radii": radii,
             "depth":depth}
 
-def render_pcd(viewpoint_camera, pcd, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, cam_type=None):
+def render_pcd(viewpoint_camera, pcd, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, cam_type=None, opacity_override=None):
     """
     Render a point cloud.
     """
@@ -178,7 +178,11 @@ def render_pcd(viewpoint_camera, pcd, pipe, bg_color : torch.Tensor, scaling_mod
     
     # Default properties for point cloud rendering
     num_points = means3D.shape[0]
-    opacity = torch.ones((num_points, 1), device="cuda")
+
+    if opacity_override is None:
+        opacity = torch.ones((num_points, 1), device="cuda")
+    else:
+        opacity =torch.tensor(opacity_override).unsqueeze(-1).float().cuda()
     
     # Use a small constant scale for points
     scales = torch.ones((num_points, 3), device="cuda") * 0.001

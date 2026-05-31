@@ -150,10 +150,9 @@ Run this to generate the labeled point cloud. Currently it will override point c
 ```bash
 PYTHONPATH=. python ObjectGS/ply_preprocessing.py \
     --dataset_path data/dynerf/cook_spinach \
-    --input_ply_path output/dynerf/cook_spinach/point_cloud/iteration_14000/point_cloud.ply \
+    --input_ply_path "output/dynerf/cook_spinach/point_cloud_3dedit/Make it look like a fauvism painting/iteration_1000/point_cloud.ply" \
     --algorithm majority \
-    --invert \
-    --output_ply_name points3D_majority.ply
+    --invert
 ```
 
 Visualize the result by rendering a video:
@@ -161,7 +160,7 @@ Visualize the result by rendering a video:
 ```
 python render_objects.py \
     --configs ./arguments/dynerf/cook_spinach.py \
-    --ply_path "data/dynerf/cook_spinach/points3D_majority.ply" \
+    --ply_path "output/dynerf/cook_spinach/point_cloud_3dedit/Make it look like a fauvism painting/iteration_1000/point_cloud_with_label.ply" \
     -s ./data/dynerf/cook_spinach \
     --model_path ./output/dynerf/cook_spinach
 ```

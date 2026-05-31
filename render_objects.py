@@ -102,7 +102,17 @@ if __name__ == "__main__":
                 v = fy * (y / z) + cy
                 print(f"  Point {i}: world={pts[i]}, cam={[x,y,z]}, uv=({u}, {v})")
 
-        rendering = render_pcd(viewpoint_camera, pcd, pipeline_params, background, cam_type=cam_type, scaling_modifier=3.0)
+        # print(pcd.colors)
+        opacity = np.ones(len(pcd.colors))
+        for i, color in enumerate(pcd.colors):
+            if (color[0] - 0.37254902 < 0.001
+            and color[1] - 0.94509804 < 0.001
+            and color[2] - 0.30980392 < 0.001):
+                opacity[i] = 0.0
+        # print(pcd.colors)
+        # exit()
+
+        rendering = render_pcd(viewpoint_camera, pcd, pipeline_params, background, cam_type=cam_type, scaling_modifier=50.0, opacity_override=opacity)
         rendered_img = rendering["render"]
         imgs.append(to8b(rendered_img.detach().cpu()).transpose(1,2,0))
 

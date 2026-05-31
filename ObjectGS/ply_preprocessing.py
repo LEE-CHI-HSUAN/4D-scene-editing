@@ -928,8 +928,10 @@ def main(args):
         color_image_dir = os.path.join(current_path, 'color_mask')
         if not os.path.isdir(color_image_dir):
             color_image_dir = None
-            
-        output_ply_path = os.path.join(current_path, args.output_ply_name)
+        
+        output_ply_path = args.output_ply_path
+        if output_ply_path is None:
+            output_ply_path = args.input_ply_path.replace(".ply", "_with_label.ply")
 
         # Loading logic
         if os.path.exists(os.path.join(current_path, "poses_bounds.npy")):
@@ -1015,10 +1017,10 @@ if __name__ == "__main__":
         help='Voting algorithm to use'
     )
     parser.add_argument(
-        '--output_ply_name', 
+        '--output_ply_path', 
         type=str, 
-        default='points3D_corr.ply', 
-        help='Output PLY file name'
+        default=None, 
+        help='Output PLY file path. Can be None.'
     )
     parser.add_argument(
         '--input_ply_path',

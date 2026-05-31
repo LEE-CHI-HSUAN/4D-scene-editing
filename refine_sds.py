@@ -332,6 +332,14 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         #     loss += opt.lambda_lpips * lpipsloss
         #print(loss)
         loss.backward()
+        if gaussians._labels is not None:
+            is_static = (gaussians._labels == 0)
+            if is_static.any():
+                for param_group in gaussians.optimizer.param_groups:
+                    if param_group["name"] in ["xyz", "f_dc", "f_rest", "opacity", "scaling", "rotation"]:
+                        for param in param_group["params"]:
+                            if param.grad is not None:
+                                param.grad[is_static] = 0.0
         if torch.isnan(loss).any():
             print("loss is nan,end training, reexecv program now.")
             os.execv(sys.executable, [sys.executable] + sys.argv)

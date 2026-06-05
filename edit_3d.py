@@ -88,9 +88,9 @@ dict_sear_steak = {
     6000: None
 }
 
-def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations, 
+def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations,
                          checkpoint_iterations, checkpoint, debug_from,
-                         gaussians, scene, stage, tb_writer, train_iter,timer, edited_images_path, prompt, scene_name):
+                         gaussians, scene, stage, tb_writer, train_iter,timer, edited_images_path, run_name, scene_name):
     first_iter = 0
 
     gaussians.training_only3dgs_setup(opt)
@@ -243,8 +243,6 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             image_pil.save("render_{:d}.png".format(int(viewpoint_cam.image_name)))
             '''
             if scene.dataset_type!="PanopticSports":
-                # TODO : path 
-                #image = Image.open(os.path.join(edited_images_path, f"edited_{prompt.split(' ')[-1].replace('?', '')}_original_time0_{dict_sear_steak[int(viewpoint_cam.image_name)]}.png))
                 if scene_name not in ['sear_steak', 'coffee_martini', 'cook_spinach'] and scene.maxtime < 6000:
                     raise NotImplementedError("sorry, please check the camera settings manually and set the dict_(scene_name)")
 
@@ -258,7 +256,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                 else:
                     view_idx = 1 + int(viewpoint_cam.image_name) // scene.maxtime
 
-                image_name = f"edited_{prompt.split(' ')[-1].replace('?', '')}_original_time0_{view_idx}.jpg"
+                image_name = f"original_time0_{view_idx}.jpg"
                 image = Image.open(os.path.join(edited_images_path, image_name))
                 transform = transforms.ToTensor()
                 gt_image = transform(image).cuda()
@@ -331,7 +329,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, [pipe, background], stage, scene.dataset_type)
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
-                scene.save_3dedit(iteration, stage, prompt)
+                scene.save_3dedit(iteration, stage, run_name)
             if dataset.render_process:
                 if (iteration < 1000 and iteration % 10 == 9) \
                     or (iteration < 3000 and iteration % 50 == 49) \
@@ -382,7 +380,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" +f"_{stage}_" + str(iteration) + ".pth")
 
-def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, edited_images_path, prompt, scene_name):
+def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, edited_images_path, run_name, scene_name):
     # first_iter = 0
     tb_writer = prepare_output_and_logger(expname)
     gaussians = GaussianModel(dataset.sh_degree, hyper)
@@ -398,7 +396,7 @@ def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, c
     
     scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations,
                          checkpoint_iterations, checkpoint, debug_from,
-                         gaussians, scene, "fine", tb_writer, 1000, timer, edited_images_path, prompt, scene_name)
+                         gaussians, scene, "fine", tb_writer, 1000, timer, edited_images_path, run_name, scene_name)
 
 def prepare_output_and_logger(expname):    
     if not args.model_path:
@@ -506,7 +504,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--dataset", type=str, default = "")
     parser.add_argument("--scene", type=str, default = "")
-    parser.add_argument("--prompt", type=str, default = "")
+    parser.add_argument("--run_name", type=str, default = "")
     parser.add_argument("--edited_images_path", type=str, default=None)
     
     args = parser.parse_args(sys.argv[1:])
@@ -527,9 +525,9 @@ if __name__ == "__main__":
 
     if args.edited_images_path is None:
         print("No edited image path provided, assuming full editing.")
-        args.edited_images_path = f"./data/{args.dataset}/{args.scene}/{args.prompt.split(' ')[-1].replace('?', '')}"
+        exit(1)
 
-    training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, args.edited_images_path, args.prompt, args.scene)
+    training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, args.edited_images_path, args.run_name, args.scene)
 
     # All done
     print("\nTraining complete.")

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ===================================================================
-# ./run_instruct_4dgs_partial.sh -d [dataset] -s [scene_name] -p [editing_prompts] -m [mask_prompt] -g [guidance_scale] -i [image_guidance_scale] -o [inpainting_dir]
+# ./run_instruct_4dgs_partial.sh -d [dataset] -s [scene_name] -p [editing_prompts] -m [mask_prompt] -g [guidance_scale] -i [image_guidance_scale]
 # ===================================================================
 
 # Default values
@@ -12,7 +12,6 @@ EDITING_PROMPTS=""
 MASK_PROMPT=""
 GUIDANCE_SCALE=7.5
 IMAGE_GUIDANCE_SCALE=1.5
-INPAINTING_DIR=""
 
 while getopts "d:s:p:m:g:i:o:" opt; do
   case $opt in
@@ -22,13 +21,12 @@ while getopts "d:s:p:m:g:i:o:" opt; do
     m) MASK_PROMPT="$OPTARG" ;;
     g) GUIDANCE_SCALE="$OPTARG" ;;
     i) IMAGE_GUIDANCE_SCALE="$OPTARG" ;;
-    o) INPAINTING_DIR="$OPTARG" ;;
     \?) echo "Invalid option -$OPTARG" >&2; exit 1 ;;
   esac
 done
 
 if [ -z "$DATASET" ] || [ -z "$SCENE_NAME" ] || [ -z "$EDITING_PROMPTS" ]; then
-    echo "Usage: $0 -d <dataset> -s <scene_name> -p <comma_separated_prompts> [-m <mask_prompt>] [-g <guidance_scale>] [-i <image_guidance_scale>] [-o <inpainting_dir>]"
+    echo "Usage: $0 -d <dataset> -s <scene_name> -p <comma_separated_prompts> [-m <mask_prompt>] [-g <guidance_scale>] [-i <image_guidance_scale>]"
     exit 1
 fi
 
@@ -97,7 +95,7 @@ python edit_3d.py \
     --model_path "./output/${DATASET}/${SCENE_NAME}" \
     --dataset "${DATASET}" \
     --scene "${SCENE_NAME}" \
-    --prompt "${EDITING_PROMPTS%%,*}" \
+    --run_name "${EDITING_PROMPTS%%,*}" \
     --edited_images_path "data/${DATASET}/${SCENE_NAME}/partial_edited"
 echo "✅ Completed 3d editing."
 echo ""

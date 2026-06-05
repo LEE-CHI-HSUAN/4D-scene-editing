@@ -59,6 +59,7 @@ def parse_args():
     parser.add_argument("--steps", type=int, default=20)
     parser.add_argument("--guidance_scale", type=float, default=7.5)
     parser.add_argument("--image_guidance_scale", type=float, default=1.5)
+    parser.add_argument("--out_folder", type=str, default="")
     return parser.parse_args()
 
 args = parse_args()
@@ -168,12 +169,15 @@ with torch.no_grad():
     
 video = (video / 2 + 0.5).clamp(0, 1) # (b*f, 3, h, w) [-1, 1] -> [0, 1]
 
-save_dir = f"./data/{args.dataset}/{args.scene_name}/{prompt.split(' ')[-1].replace('?', '')}"
+if args.out_folder == "":
+    args.out_folder = prompt.split(' ')[-1].replace('?', '')
+save_dir = f"./data/{args.dataset}/{args.scene_name}/inpainting/{args.out_folder}"
 os.makedirs(save_dir, exist_ok=True)
 for i in range(sequence_length):
     filename = f"edited_{prompt.split(' ')[-1].replace('?', '')}_{os.path.basename(files[i])}"
     save_path = os.path.join(save_dir, filename)
     torchvision.utils.save_image(video[i], save_path)
+print(f"Inpainted images saved at {save_dir}")
 
 save_dir = f"./data/{args.dataset}/{args.scene_name}/time0"
 os.makedirs(save_dir, exist_ok=True)
@@ -181,3 +185,4 @@ for i in range(sequence_length):
     filename = os.path.basename(files[i])
     save_path = os.path.join(save_dir, filename)
     torchvision.utils.save_image(images[i], save_path)
+print(f"Rescaled time0 images saved at {save_dir}")

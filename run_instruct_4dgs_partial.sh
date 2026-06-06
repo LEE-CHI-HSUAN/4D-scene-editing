@@ -87,20 +87,21 @@ echo ""
 # echo "✅ Completed time0 image editing."
 # echo ""
 
-echo "[5/] 3D editing"
-python edit_3d.py \
-    --configs "./arguments/${DATASET}/${SCENE_NAME}.py" \
-    --ply_path "./output/${DATASET}/${SCENE_NAME}/point_cloud/iteration_14000/point_cloud.ply" \
-    -s "./data/${DATASET}/${SCENE_NAME}" \
-    --model_path "./output/${DATASET}/${SCENE_NAME}" \
-    --dataset "${DATASET}" \
-    --scene "${SCENE_NAME}" \
-    --run_name "${EDITING_PROMPTS%%,*}" \
-    --edited_images_path "data/${DATASET}/${SCENE_NAME}/partial_edited"
-echo "✅ Completed 3d editing."
-echo ""
+# echo "[5/] 3D editing"
+# python edit_3d.py \
+#     --configs "./arguments/${DATASET}/${SCENE_NAME}.py" \
+#     --ply_path "./output/${DATASET}/${SCENE_NAME}/point_cloud/iteration_14000/point_cloud.ply" \
+#     -s "./data/${DATASET}/${SCENE_NAME}" \
+#     --model_path "./output/${DATASET}/${SCENE_NAME}" \
+#     --dataset "${DATASET}" \
+#     --scene "${SCENE_NAME}" \
+#     --run_name "${EDITING_PROMPTS%%,*}" \
+#     --edited_images_path "data/${DATASET}/${SCENE_NAME}/partial_edited"
+# echo "✅ Completed 3d editing."
+# echo ""
 
 # echo "[6/] 3D Segmentation, adding labels"
+# rm -rf data/${DATASET}/${SCENE_NAME}/color_mask
 # PYTHONPATH=. python ObjectGS/ply_preprocessing.py \
 #     --dataset_path data/dynerf/cook_spinach \
 #     --input_ply_path "./output/${DATASET}/${SCENE_NAME}/point_cloud_3dedit/${EDITING_PROMPTS%%,*}/iteration_1000/point_cloud.ply" \
@@ -110,16 +111,16 @@ echo ""
 # echo "✅ Completed 3d editing."
 # echo ""
 
-# echo "[7/] Score refinement"
-# python refine_sds.py \
-#     --configs "./arguments/${DATASET}/${SCENE_NAME}.py" \
-#     --ply_path "./output/${DATASET}/${SCENE_NAME}/point_cloud_3dedit/${EDITING_PROMPTS%%,*}/iteration_1000/point_cloud_with_label.ply" \
-#     -s "./data/${DATASET}/${SCENE_NAME}" \
-#     --model_path "./output/${DATASET}/${SCENE_NAME}" \
-#     --prompt "${EDITING_PROMPTS%%,*}" \
-#     --guidance_scale ${GUIDANCE_SCALE} \
-#     --image_guidance_scale ${IMAGE_GUIDANCE_SCALE}
-# echo "✅ Completed score refinement."
-# echo ""
+echo "[7/] Score refinement"
+python refine_sds.py \
+    --configs "./arguments/${DATASET}/${SCENE_NAME}.py" \
+    --ply_path "./output/${DATASET}/${SCENE_NAME}/point_cloud_3dedit/${EDITING_PROMPTS%%,*}/iteration_1000/point_cloud_with_label.ply" \
+    -s "./data/${DATASET}/${SCENE_NAME}" \
+    --model_path "./output/${DATASET}/${SCENE_NAME}" \
+    --prompt_fg "${EDITING_PROMPTS[0]}" \
+    --guidance_scale ${GUIDANCE_SCALE} \
+    --image_guidance_scale ${IMAGE_GUIDANCE_SCALE}
+echo "✅ Completed score refinement."
+echo ""
 
 echo "🎉 All pipeline steps have been executed."

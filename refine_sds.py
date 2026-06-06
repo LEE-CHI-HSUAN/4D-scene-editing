@@ -66,8 +66,11 @@ import os
 from pytorch_lightning import seed_everything   
 
 def encode_1(ip2p, input):
-    latents = ip2p.vae.encode(2*input-1).latent_dist.sample() * 0.18215  # (b*f, 4, h//4, w//4)
-    return latents
+    latents_list = []
+    for i in range(input.shape[0]):
+        latent = ip2p.vae.encode(2 * input[i:i+1] - 1).latent_dist.sample() * 0.18215
+        latents_list.append(latent)
+    return torch.cat(latents_list, dim=0)
 
 def encode_2(ip2p, input):
     image_latents = ip2p.vae.encode(2*input-1).latent_dist.mode() # (b*f, 4, h//4, w//4)

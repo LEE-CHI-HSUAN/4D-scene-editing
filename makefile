@@ -1,7 +1,7 @@
 run:
 	bash run_instruct_4dgs_partial.sh \
-		-d dynerf -s cook_spinach -p "Make it look like a fauvism painting" \
-		-m "guy." \
+		-d dynerf -s cook_spinach -p "Make it look like a fauvism painting","Make it look like a Van Gogh painting" \
+		-m "bottle. guy." \
 		-g 10.5 -i 1.2
 
 sds:

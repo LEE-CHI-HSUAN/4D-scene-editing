@@ -78,7 +78,7 @@ def encode_2(ip2p, input):
     
 def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations,
                          checkpoint_iterations, checkpoint, debug_from,
-                         gaussians, scene, stage, tb_writer, train_iter,timer, ip2p, prompt_fg, prompt_bg, guidance_scale, image_guidance_scale):
+                         gaussians, scene, stage, tb_writer, train_iter,timer, ip2p, prompts, prompt_bg, guidance_scale, image_guidance_scale):
     
     torch_dtype = torch.float16
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -222,7 +222,20 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         radii_list = []
         visibility_filter_list = []
         viewspace_point_tensor_list = []
-        mask_list = []
+        # Identify foreground labels and count them
+        fg_labels = []
+        if gaussians._labels is not None:
+            unique_labels = torch.unique(gaussians._labels)
+            fg_labels = unique_labels[unique_labels > 0].tolist()
+            fg_labels.sort()
+        
+        # We only support up to len(prompts) foreground labels
+        fg_labels = fg_labels[:len(prompts)]
+        num_fg = len(fg_labels)
+        
+        # List of lists: mask_tensors_per_label[label_idx][cam_idx]
+        mask_tensors_per_label = [[] for _ in range(num_fg)]
+        full_fg_mask_list = []
 
         for viewpoint_cam in viewpoint_cams:
             render_pkg = render(viewpoint_cam, gaussians, pipe, background, stage=stage,cam_type=scene.dataset_type)
@@ -238,24 +251,37 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             visibility_filter_list.append(visibility_filter.unsqueeze(0))
             viewspace_point_tensor_list.append(viewspace_point_tensor)
 
-            # Render 2D Mask from per-point _labels attribute
-            # Assume labels=0 is background, labels>0 is foreground
-            if gaussians._labels is not None:
-                mask_val = (gaussians._labels > 0).float().unsqueeze(1) # [N, 1]
-                override_color = mask_val.repeat(1, 3)
-                black_background = torch.zeros_like(background)
-                render_mask_pkg = render(viewpoint_cam, gaussians, pipe, black_background, override_color=override_color, stage=stage, cam_type=scene.dataset_type)
-                rendered_mask = render_mask_pkg["render"][0]  # [H, W]
-                mask_list.append(rendered_mask.unsqueeze(0).unsqueeze(0))  # [1, 1, H, W]
+            # Render 2D Mask for each foreground label
+            black_background = torch.zeros_like(background)
+            if num_fg > 0:
+                # To efficiently render, we combine all fg for a 'full' mask,
+                # but we need individual masks for latent blending.
+                current_cam_fg_masks = []
+                for label in fg_labels:
+                    mask_val = (gaussians._labels == label).float().unsqueeze(1)
+                    override_color = mask_val.repeat(1, 3)
+                    render_mask_pkg = render(viewpoint_cam, gaussians, pipe, black_background, override_color=override_color, stage=stage, cam_type=scene.dataset_type)
+                    rendered_mask = render_mask_pkg["render"][0]  # [H, W]
+                    current_cam_fg_masks.append(rendered_mask.unsqueeze(0).unsqueeze(0)) # [1, 1, H, W]
+                
+                for i, m in enumerate(current_cam_fg_masks):
+                    mask_tensors_per_label[i].append(m)
+                
+                # Full FG mask for anchor loss
+                full_fg_mask = torch.clamp(torch.cat(current_cam_fg_masks, dim=1).sum(dim=1, keepdim=True), 0, 1)
+                full_fg_mask_list.append(full_fg_mask)
             else:
-                # Fallback to all foreground if labels missing
-                mask_list.append(torch.ones((1, 1, image.shape[1], image.shape[2]), device="cuda", dtype=image.dtype))
+                # No labels? No foreground masking.
+                full_fg_mask_list.append(torch.zeros((1, 1, image.shape[1], image.shape[2]), device="cuda", dtype=image.dtype))
                 
         radii = torch.cat(radii_list,0).max(dim=0).values
         visibility_filter = torch.cat(visibility_filter_list).any(dim=0)
         image_tensor = torch.cat(images,0)
         gt_image_tensor = torch.cat(gt_images,0)
-        mask_tensor = torch.cat(mask_list, 0)  # [seq_len, 1, H, W]
+        # Concatenate masks for each label
+        # label_masks[label_idx] -> [seq_len, 1, H, W]
+        label_masks = [torch.cat(m_list, 0) for m_list in mask_tensors_per_label]
+        full_fg_mask_tensor = torch.cat(full_fg_mask_list, 0) # [seq_len, 1, H, W]
         
         dataset_length, C, H, W = image_tensor.shape
         
@@ -280,19 +306,25 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         image_latents = rearrange(image_latents, "(b f) c h w -> b c f h w", f=sequence_length).to(device=device, dtype=torch_dtype)  # (b, 4, f, h//4, w//4)
         uncond_image_latents = torch.zeros_like(image_latents)
 
-        # Downsample mask to latent space and binarize
-        mask_latent = F.interpolate(mask_tensor, size=(new_height//8, new_width//8), mode='bilinear', align_corners=False).to(device=device, dtype=torch_dtype)
-        mask_latent = (mask_latent > 0.5).to(dtype=torch_dtype)
-        mask_latent = rearrange(mask_latent, "(b f) c h w -> b c f h w", f=sequence_length)  # (1, 1, f, h//8, w//8)
-        mask_latent = mask_latent.repeat(1, 4, 1, 1, 1)  # (1, 4, f, h//8, w//8)
+        # Downsample each mask to latent space and binarize
+        mask_latents = []
+        for m_tensor in label_masks:
+            m_latent = F.interpolate(m_tensor, size=(new_height//8, new_width//8), mode='bilinear', align_corners=False).to(device=device, dtype=torch_dtype)
+            m_latent = (m_latent > 0.5).to(dtype=torch_dtype)
+            m_latent = rearrange(m_latent, "(b f) c h w -> b c f h w", f=sequence_length)  # (1, 1, f, h//8, w//8)
+            m_latent = m_latent.repeat(1, 4, 1, 1, 1)  # (1, 4, f, h//8, w//8)
+            mask_latents.append(m_latent)
 
-        # Encode foreground prompt
-        prompt_embeds_fg = ip2p._encode_prompt(
-            prompt_fg,
-            device=device,
-            num_images_per_prompt=1,
-            do_classifier_free_guidance=True,
-        ) # [3b, 77, 768]
+        # Encode foreground prompts
+        prompt_embeds_list = []
+        for p_str in prompts:
+            p_embeds = ip2p._encode_prompt(
+                p_str,
+                device=device,
+                num_images_per_prompt=1,
+                do_classifier_free_guidance=True,
+            ) # [3b, 77, 768]
+            prompt_embeds_list.append(p_embeds)
 
         # Encode background prompt (if provided)
         if prompt_bg and prompt_bg.lower() != "none":
@@ -327,32 +359,38 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         # predict the noise residual
     
         with torch.no_grad():
-            # 1. Forward for Foreground prompt
-            noise_pred_fg_all = ip2p.unet(latent_model_input, t, prompt_embeds_fg, None, None, False)[0] # [3b, 4, sequence_length, h//4, w//4]
-            noise_pred_fg_text, noise_pred_fg_image, noise_pred_fg_uncond = noise_pred_fg_all.chunk(3)
-            
-            noise_pred_fg = (
-                noise_pred_fg_uncond
-                + guidance_scale * (noise_pred_fg_text - noise_pred_fg_image)
-                + image_guidance_scale * (noise_pred_fg_image - noise_pred_fg_uncond)
-            )
-
-            # 2. Forward for Background prompt (if provided)
+            # Compute composite noise_pred
+            # Start with background (or noise if no bg prompt)
             if prompt_embeds_bg is not None:
                 noise_pred_bg_all = ip2p.unet(latent_model_input, t, prompt_embeds_bg, None, None, False)[0]
                 noise_pred_bg_text, noise_pred_bg_image, noise_pred_bg_uncond = noise_pred_bg_all.chunk(3)
-                
                 noise_pred_bg = (
                     noise_pred_bg_uncond
                     + guidance_scale * (noise_pred_bg_text - noise_pred_bg_image)
                     + image_guidance_scale * (noise_pred_bg_image - noise_pred_bg_uncond)
                 )
             else:
-                # No background prompt: set to noise so gradient becomes 0 (background stays unchanged)
                 noise_pred_bg = noise
 
-            # 3. Spatial blending via mask
-            noise_pred = noise_pred_fg * mask_latent + noise_pred_bg * (1.0 - mask_latent)
+            # Composite noise prediction initialized with background
+            noise_pred = noise_pred_bg.clone()
+            
+            # Sum up foreground predictions weighted by their masks
+            # Note: We assume disjoint labels
+            for i in range(num_fg):
+                m_latent = mask_latents[i]
+                p_embeds = prompt_embeds_list[i]
+                
+                noise_pred_fg_all = ip2p.unet(latent_model_input, t, p_embeds, None, None, False)[0]
+                noise_pred_fg_text, noise_pred_fg_image, noise_pred_fg_uncond = noise_pred_fg_all.chunk(3)
+                noise_pred_fg = (
+                    noise_pred_fg_uncond
+                    + guidance_scale * (noise_pred_fg_text - noise_pred_fg_image)
+                    + image_guidance_scale * (noise_pred_fg_image - noise_pred_fg_uncond)
+                )
+                
+                # Apply foreground prediction where its mask is active
+                noise_pred = noise_pred * (1.0 - m_latent) + noise_pred_fg * m_latent
         
         alphas = ip2p.scheduler.alphas_cumprod.to(device)
         w = (1 - alphas[t]).view(-1, 1, 1, 1)
@@ -371,7 +409,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         psnr_ = psnr(image_tensor, gt_image_tensor).mean().double()
         
         # Background L1 anchor loss: prevent background from drifting
-        bg_mask = 1.0 - mask_tensor  # [seq_len, 1, H, W]
+        bg_mask = 1.0 - full_fg_mask_tensor  # [seq_len, 1, H, W]
         Ll1_bg = l1_loss(image_tensor * bg_mask, gt_image_tensor[:,:3,:,:] * bg_mask)
         
         loss = loss_sds + 1000.0 * Ll1_bg
@@ -407,7 +445,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             #training_report(tb_writer, iteration, loss_sds, loss, loss_sds, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, [pipe, background], stage, scene.dataset_type)
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
-                scene.save_refine(iteration, stage, prompt_fg)
+                scene.save_refine(iteration, stage, prompts[0] if prompts else "edit")
             if dataset.render_process:
                 if (iteration < 1000 and iteration % 10 == 9) \
                     or (iteration < 3000 and iteration % 50 == 49) \
@@ -453,7 +491,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" +f"_{stage}_" + str(iteration) + ".pth")
-def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, prompt_fg, prompt_bg, guidance_scale, image_guidance_scale):
+def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, prompts, prompt_bg, guidance_scale, image_guidance_scale):
     # first_iter = 0
     tb_writer = prepare_output_and_logger(expname)
     gaussians = GaussianModel(dataset.sh_degree, hyper)
@@ -497,7 +535,7 @@ def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, c
 
     scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations,
                          checkpoint_iterations, checkpoint, debug_from,
-                         gaussians, scene, "fine", tb_writer, 800, timer, ip2p, prompt_fg, prompt_bg, guidance_scale, image_guidance_scale)
+                         gaussians, scene, "fine", tb_writer, 800, timer, ip2p, prompts, prompt_bg, guidance_scale, image_guidance_scale)
 
 def prepare_output_and_logger(expname):    
     if not args.model_path:
@@ -597,7 +635,7 @@ if __name__ == "__main__":
     parser.add_argument("--configs", type=str, default = "")
     
     parser.add_argument("--ply_path", type=str, default = "")
-    parser.add_argument("--prompt_fg", type=str, default="", help="Foreground editing prompt")
+    parser.add_argument("--prompts", nargs="+", type=str, default=[], help="Foreground editing prompts. prompts[0] for label 1, prompts[1] for label 2, etc.")
     parser.add_argument("--prompt_bg", type=str, default="none", help="Background editing prompt (use 'none' to keep background unchanged)")
     parser.add_argument('--guidance_scale', type=float, default=10.5)
     parser.add_argument('--image_guidance_scale', type=float, default=1.2)
@@ -618,7 +656,7 @@ if __name__ == "__main__":
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
 
-    training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, args.prompt_fg, args.prompt_bg, args.guidance_scale, args.image_guidance_scale)
+    training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, args.prompts, args.prompt_bg, args.guidance_scale, args.image_guidance_scale)
 
     # All done
     print("\nEditing complete.")

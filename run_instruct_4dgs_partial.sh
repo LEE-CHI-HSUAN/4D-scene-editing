@@ -41,75 +41,75 @@ echo "  - mask_prompt: \"${MASK_PROMPT}\""
 echo "------------------------------------------"
 echo ""
 
-echo "[1/] Collect time0 images..."
-python time0_collect.py --dataset ${DATASET} --scene_name ${SCENE_NAME}
-echo ""
+# echo "[1/] Collect time0 images..."
+# python time0_collect.py --dataset ${DATASET} --scene_name ${SCENE_NAME}
+# echo ""
 
-echo "[2/] Inpainting time0 images..."
-for i in "${!PROMPT_ARRAY[@]}"; do
-    prompt="${PROMPT_ARRAY[$i]}"
-    index=$((i + 1))
-    echo "  - Inpainting with prompt: ${prompt}"
-    python ./ip2p_models/multiview_edit.py \
-        --dataset "${DATASET}" \
-        --scene_name "${SCENE_NAME}" \
-        --prompt "${prompt}" \
-        --out_folder "prompt_${index}" \
-        --resize 1024 \
-        --steps 20 \
-        --guidance_scale ${GUIDANCE_SCALE} \
-        --image_guidance_scale ${IMAGE_GUIDANCE_SCALE}
-done
-echo "✅ Completed time0 image editing."
-echo ""
+# echo "[2/] Inpainting time0 images..."
+# for i in "${!PROMPT_ARRAY[@]}"; do
+#     prompt="${PROMPT_ARRAY[$i]}"
+#     index=$((i + 1))
+#     echo "  - Inpainting with prompt: ${prompt}"
+#     python ./ip2p_models/multiview_edit.py \
+#         --dataset "${DATASET}" \
+#         --scene_name "${SCENE_NAME}" \
+#         --prompt "${prompt}" \
+#         --out_folder "prompt_${index}" \
+#         --resize 1024 \
+#         --steps 20 \
+#         --guidance_scale ${GUIDANCE_SCALE} \
+#         --image_guidance_scale ${IMAGE_GUIDANCE_SCALE}
+# done
+# echo "✅ Completed time0 image editing."
+# echo ""
 
-echo "[3/] Generate masks for time0 images..."
-python grounded_sam2_mask_gen.py \
-    --data_dir "data/${DATASET}/${SCENE_NAME}/time0" \
-    --output_dir "data/${DATASET}/${SCENE_NAME}/object_mask" \
-    --prompt "${MASK_PROMPT}"
-echo "✅ Completed mask generation."
-echo ""
+# echo "[3/] Generate masks for time0 images..."
+# python grounded_sam2_mask_gen.py \
+#     --data_dir "data/${DATASET}/${SCENE_NAME}/time0" \
+#     --output_dir "data/${DATASET}/${SCENE_NAME}/object_mask" \
+#     --prompt "${MASK_PROMPT}"
+# echo "✅ Completed mask generation."
+# echo ""
 
-echo "[4/] Edit time0 images..."
+# echo "[4/] Edit time0 images..."
 
-# Build img_dirs list
-IMG_DIRS=("data/${DATASET}/${SCENE_NAME}/time0")
-for i in "${!PROMPT_ARRAY[@]}"; do
-    index=$((i + 1))
-    IMG_DIRS+=("data/${DATASET}/${SCENE_NAME}/inpainting/prompt_${index}")
-done
+# # Build img_dirs list
+# IMG_DIRS=("data/${DATASET}/${SCENE_NAME}/time0")
+# for i in "${!PROMPT_ARRAY[@]}"; do
+#     index=$((i + 1))
+#     IMG_DIRS+=("data/${DATASET}/${SCENE_NAME}/inpainting/prompt_${index}")
+# done
 
-python partial_edit.py \
-    --img_dirs "${IMG_DIRS[@]}" \
-    --mask_dir "data/${DATASET}/${SCENE_NAME}/object_mask" \
-    --save_dir "data/${DATASET}/${SCENE_NAME}/partial_edited"
-echo "✅ Completed time0 image editing."
-echo ""
+# python partial_edit.py \
+#     --img_dirs "${IMG_DIRS[@]}" \
+#     --mask_dir "data/${DATASET}/${SCENE_NAME}/object_mask" \
+#     --save_dir "data/${DATASET}/${SCENE_NAME}/partial_edited"
+# echo "✅ Completed time0 image editing."
+# echo ""
 
-echo "[5/] 3D editing"
-python edit_3d.py \
-    --configs "./arguments/${DATASET}/${SCENE_NAME}.py" \
-    --ply_path "./output/${DATASET}/${SCENE_NAME}/point_cloud/iteration_14000/point_cloud.ply" \
-    -s "./data/${DATASET}/${SCENE_NAME}" \
-    --model_path "./output/${DATASET}/${SCENE_NAME}" \
-    --dataset "${DATASET}" \
-    --scene "${SCENE_NAME}" \
-    --run_name "${EDITING_PROMPTS%%,*}" \
-    --edited_images_path "data/${DATASET}/${SCENE_NAME}/partial_edited"
-echo "✅ Completed 3d editing."
-echo ""
+# echo "[5/] 3D editing"
+# python edit_3d.py \
+#     --configs "./arguments/${DATASET}/${SCENE_NAME}.py" \
+#     --ply_path "./output/${DATASET}/${SCENE_NAME}/point_cloud/iteration_14000/point_cloud.ply" \
+#     -s "./data/${DATASET}/${SCENE_NAME}" \
+#     --model_path "./output/${DATASET}/${SCENE_NAME}" \
+#     --dataset "${DATASET}" \
+#     --scene "${SCENE_NAME}" \
+#     --run_name "${EDITING_PROMPTS%%,*}" \
+#     --edited_images_path "data/${DATASET}/${SCENE_NAME}/partial_edited"
+# echo "✅ Completed 3d editing."
+# echo ""
 
-echo "[6/] 3D Segmentation, adding labels"
-rm -rf data/${DATASET}/${SCENE_NAME}/color_mask
-PYTHONPATH=. python ObjectGS/ply_preprocessing.py \
-    --dataset_path data/dynerf/cook_spinach \
-    --input_ply_path "./output/${DATASET}/${SCENE_NAME}/point_cloud_3dedit/${EDITING_PROMPTS%%,*}/iteration_1000/point_cloud.ply" \
-    --algorithm majority \
-    --invert \
-    --add_label_only
-echo "✅ Completed 3d editing."
-echo ""
+# echo "[6/] 3D Segmentation, adding labels"
+# rm -rf data/${DATASET}/${SCENE_NAME}/color_mask
+# PYTHONPATH=. python ObjectGS/ply_preprocessing.py \
+#     --dataset_path data/dynerf/cook_spinach \
+#     --input_ply_path "./output/${DATASET}/${SCENE_NAME}/point_cloud_3dedit/${EDITING_PROMPTS%%,*}/iteration_1000/point_cloud.ply" \
+#     --algorithm majority \
+#     --invert \
+#     --add_label_only
+# echo "✅ Completed 3d editing."
+# echo ""
 
 echo "[7/] Score refinement"
 python refine_sds.py \
@@ -117,7 +117,7 @@ python refine_sds.py \
     --ply_path "./output/${DATASET}/${SCENE_NAME}/point_cloud_3dedit/${EDITING_PROMPTS%%,*}/iteration_1000/point_cloud_with_label.ply" \
     -s "./data/${DATASET}/${SCENE_NAME}" \
     --model_path "./output/${DATASET}/${SCENE_NAME}" \
-    --prompt_fg "${EDITING_PROMPTS[0]}" \
+    --prompts "${PROMPT_ARRAY[@]}" \
     --guidance_scale ${GUIDANCE_SCALE} \
     --image_guidance_scale ${IMAGE_GUIDANCE_SCALE}
 echo "✅ Completed score refinement."

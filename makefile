@@ -4,5 +4,8 @@ run:
 		-m "bottle. guy." \
 		-g 10.5 -i 1.2
 
+3d-edit:
+	python render_edited4d.py     --configs ./arguments/dynerf/cook_spinach.py     --ply_path "output/dynerf/cook_spinach/point_cloud_3dedit/Make it look like a fauvism painting/iteration_1000/point_cloud.ply"     -s ./data/dynerf/cook_spinach     --model_path ./output/dynerf/cook_spinach
+
 sds:
 	python render_edited4d.py     --configs ./arguments/dynerf/cook_spinach.py     --ply_path "output/dynerf/cook_spinach/point_cloud_refine/Make it look like a fauvism painting/iteration_800/point_cloud.ply"     -s ./data/dynerf/cook_spinach     --model_path ./output/dynerf/cook_spinach
